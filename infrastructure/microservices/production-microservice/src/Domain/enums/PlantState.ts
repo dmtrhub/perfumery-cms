@@ -1,0 +1,5 @@
+export enum PlantState {
+  PLANTED = "PLANTED",
+  HARVESTED = "HARVESTED",
+  PROCESSED = "PROCESSED"
+}
