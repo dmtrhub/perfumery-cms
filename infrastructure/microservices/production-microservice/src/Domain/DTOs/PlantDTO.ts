@@ -10,5 +10,6 @@ export interface PlantDTO {
   quantity: number;
   remainingForProcessing: number;
   availableForHarvest: boolean;
+  harvestAvailableDate?: Date;
   createdAt: Date;
 }

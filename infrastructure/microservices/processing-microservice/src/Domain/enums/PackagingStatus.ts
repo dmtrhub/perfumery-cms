@@ -1,0 +1,7 @@
+export enum PackagingStatus {
+  AVAILABLE = "AVAILABLE",
+  RESERVED = "RESERVED",
+  SHIPPED = "SHIPPED",
+  DELIVERED = "DELIVERED",
+  LOST = "LOST"
+}

@@ -5,4 +5,5 @@ export interface CreatePlantDTO {
   quantity: number;
   oilIntensity?: number; // Optional, if not provided generates randomly
   userId?: number;
+  forProcessing?: boolean;
 }

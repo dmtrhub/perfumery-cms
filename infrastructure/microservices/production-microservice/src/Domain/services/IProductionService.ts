@@ -9,16 +9,20 @@ export interface IProductionService {
   createPlant(data: CreatePlantDTO): Promise<PlantDTO>;
   getAllPlants(): Promise<PlantDTO[]>;
   getPlantById(id: number): Promise<PlantDTO | null>;
-  changeOilIntensity(data: UpdatePlantOilIntensityDTO): Promise<PlantDTO | null>;
-  harvestPlants(data: HarvestPlantsDTO): Promise<boolean>;
+  
+  // Plant management
+  changeOilIntensity(plantId: number, data: UpdatePlantOilIntensityDTO): Promise<PlantDTO | null>;
+  harvestPlants(plantId: number, data: HarvestPlantsDTO): Promise<boolean>;
+  
+  // Plant queries
   getAvailablePlants(): Promise<PlantDTO[]>;
   getPlantsForProcessing(): Promise<PlantDTO[]>;
+  getPlantsExceedingThreshold(): Promise<PlantDTO[]>;
   
   // Log operations
   getProductionLogs(): Promise<ProductionLog[]>;
   getLogsByPlantId(plantId: number): Promise<ProductionLog[]>;
   
-  // Special operations from spec
+  // Processing balance
   requestNewPlantForProcessing(processedPlantId: number, processedIntensity: number): Promise<PlantDTO | null>;
-  generateRandomOilIntensity(): number;
 }

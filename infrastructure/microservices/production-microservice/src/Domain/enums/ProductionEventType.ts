@@ -4,5 +4,6 @@ export enum ProductionEventType {
   HARVEST = "HARVEST",
   OIL_INTENSITY_GENERATION = "OIL_INTENSITY_GENERATION",
   ERROR = "ERROR",
-  INFO = "INFO"
+  INFO = "INFO",
+  WARNING = "WARNING",
 }

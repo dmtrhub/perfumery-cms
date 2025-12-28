@@ -7,12 +7,12 @@ export function validatePlantSearchParams(params: any): {
     minIntensity?: number;
     maxIntensity?: number;
     availableOnly?: boolean;
-  }
+  };
 } {
   const errors: string[] = [];
   const validatedParams: any = {};
 
-  if (params.name && typeof params.name === 'string') {
+  if (params.name && typeof params.name === "string") {
     if (params.name.length < 2) {
       errors.push("Search name must be at least 2 characters");
     } else {
@@ -20,10 +20,10 @@ export function validatePlantSearchParams(params: any): {
     }
   }
 
-  if (params.state && typeof params.state === 'string') {
-    const validStates = ['PLANTED', 'HARVESTED', 'PROCESSED'];
+  if (params.state && typeof params.state === "string") {
+    const validStates = ["PLANTED", "HARVESTED", "PROCESSED"];
     if (!validStates.includes(params.state.toUpperCase())) {
-      errors.push(`Invalid state. Must be one of: ${validStates.join(', ')}`);
+      errors.push(`Invalid state. Must be one of: ${validStates.join(", ")}`);
     } else {
       validatedParams.state = params.state.toUpperCase();
     }
@@ -55,13 +55,14 @@ export function validatePlantSearchParams(params: any): {
   }
 
   if (params.availableOnly) {
-    validatedParams.availableOnly = params.availableOnly === 'true' || params.availableOnly === true;
+    validatedParams.availableOnly =
+      params.availableOnly === "true" || params.availableOnly === true;
   }
 
   return {
     valid: errors.length === 0,
     errors: errors.length > 0 ? errors : undefined,
-    validatedParams
+    validatedParams,
   };
 }
 
@@ -75,7 +76,7 @@ export function validateLogsQueryParams(params: any): {
     endDate?: Date;
     successfulOnly?: boolean;
     limit?: number;
-  }
+  };
 } {
   const errors: string[] = [];
   const validatedParams: any = {};
@@ -89,10 +90,19 @@ export function validateLogsQueryParams(params: any): {
     }
   }
 
-  if (params.eventType && typeof params.eventType === 'string') {
-    const validEventTypes = ['PLANTING', 'OIL_INTENSITY_CHANGE', 'HARVEST', 'OIL_INTENSITY_GENERATION', 'ERROR', 'INFO'];
+  if (params.eventType && typeof params.eventType === "string") {
+    const validEventTypes = [
+      "PLANTING",
+      "OIL_INTENSITY_CHANGE",
+      "HARVEST",
+      "OIL_INTENSITY_GENERATION",
+      "ERROR",
+      "INFO",
+    ];
     if (!validEventTypes.includes(params.eventType.toUpperCase())) {
-      errors.push(`Invalid event type. Must be one of: ${validEventTypes.join(', ')}`);
+      errors.push(
+        `Invalid event type. Must be one of: ${validEventTypes.join(", ")}`
+      );
     } else {
       validatedParams.eventType = params.eventType.toUpperCase();
     }
@@ -124,7 +134,8 @@ export function validateLogsQueryParams(params: any): {
   }
 
   if (params.successfulOnly) {
-    validatedParams.successfulOnly = params.successfulOnly === 'true' || params.successfulOnly === true;
+    validatedParams.successfulOnly =
+      params.successfulOnly === "true" || params.successfulOnly === true;
   }
 
   if (params.limit) {
@@ -139,6 +150,6 @@ export function validateLogsQueryParams(params: any): {
   return {
     valid: errors.length === 0,
     errors: errors.length > 0 ? errors : undefined,
-    validatedParams
+    validatedParams,
   };
 }
