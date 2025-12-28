@@ -3,5 +3,6 @@ export enum PackagingStatus {
   RESERVED = "RESERVED",
   SHIPPED = "SHIPPED",
   DELIVERED = "DELIVERED",
-  LOST = "LOST"
+  LOST = "LOST",
+  SENT_TO_STORAGE = "SENT_TO_STORAGE"
 }

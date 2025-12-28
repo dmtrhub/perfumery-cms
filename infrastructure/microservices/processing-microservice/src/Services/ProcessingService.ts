@@ -8,17 +8,18 @@ import { CreatePerfumeDTO } from "../Domain/DTOs/CreatePerfumeDTO";
 import { ProcessPlantsDTO } from "../Domain/DTOs/ProcessPlantsDTO";
 import { GetPerfumesDTO } from "../Domain/DTOs/GetPerfumesDTO";
 import { PackagingRequestDTO } from "../Domain/DTOs/PackagingRequestDTO";
-import { ShipPackagingDTO } from "../Domain/DTOs/ShipPackagingDTO";
 import { ProcessingStatus } from "../Domain/enums/ProcessingStatus";
 import { PerfumeType } from "../Domain/enums/PerfumeType";
 import { SourceType } from "../Domain/enums/SourceType";
 import { PackagingStatus } from "../Domain/enums/PackagingStatus";
 import { ProductionClient } from "../External/ProductionClient";
 import { AuditClient } from "../External/AuditClient";
+import { StorageClient } from "../External/StorageClient";
 
 export class ProcessingService implements IProcessingService {
   private productionClient: ProductionClient;
   private auditClient: AuditClient;
+  private storageClient: StorageClient;
 
   constructor(
     private perfumeRepository: Repository<Perfume>,
@@ -28,23 +29,24 @@ export class ProcessingService implements IProcessingService {
   ) {
     this.productionClient = new ProductionClient();
     this.auditClient = new AuditClient();
-    
+    this.storageClient = new StorageClient();
+
     // AUDIT: Log service start
-    this.auditClient.logInfo(
-      "PROCESSING",
-      "SERVICE_STARTED",
-      "Processing Service started",
-      { timestamp: new Date().toISOString() }
-    ).catch(console.error);
-    
+    this.auditClient
+      .logInfo("PROCESSING", "SERVICE_STARTED", "Processing Service started", {
+        timestamp: new Date().toISOString(),
+      })
+      .catch(console.error);
+
     console.log("\x1b[36m[ProcessingService@1.0.0]\x1b[0m Service started");
   }
 
   async createPerfume(data: CreatePerfumeDTO): Promise<Perfume> {
     try {
-      console.log(`\x1b[36m[ProcessingService]\x1b[0m Creating perfume: ${data.name}`);
+      console.log(
+        `\x1b[36m[ProcessingService]\x1b[0m Creating perfume: ${data.name}`
+      );
 
-      // AUDIT: Log start
       await this.auditClient.logInfo(
         "PROCESSING",
         "CREATE_PERFUME_STARTED",
@@ -61,7 +63,6 @@ export class ProcessingService implements IProcessingService {
 
       const savedPerfume = await this.perfumeRepository.save(perfume);
 
-      // AUDIT: Log success
       await this.auditClient.logInfo(
         "PROCESSING",
         "CREATE_PERFUME_SUCCESS",
@@ -86,7 +87,6 @@ export class ProcessingService implements IProcessingService {
         error
       );
 
-      // AUDIT: Log error
       await this.auditClient.logError(
         "PROCESSING",
         "CREATE_PERFUME_FAILED",
@@ -106,7 +106,6 @@ export class ProcessingService implements IProcessingService {
     try {
       console.log("\x1b[36m[ProcessingService]\x1b[0m Getting all perfumes");
 
-      // AUDIT: Log start
       await this.auditClient.logInfo(
         "PROCESSING",
         "GET_ALL_PERFUMES",
@@ -135,7 +134,6 @@ export class ProcessingService implements IProcessingService {
       const perfumes = await query.getMany();
       const count = perfumes.length;
 
-      // AUDIT: Log success
       await this.auditClient.logInfo(
         "PROCESSING",
         "GET_ALL_PERFUMES_SUCCESS",
@@ -150,7 +148,6 @@ export class ProcessingService implements IProcessingService {
         error
       );
 
-      // AUDIT: Log error
       await this.auditClient.logError(
         "PROCESSING",
         "GET_ALL_PERFUMES_FAILED",
@@ -168,7 +165,6 @@ export class ProcessingService implements IProcessingService {
         `\x1b[36m[ProcessingService]\x1b[0m Getting perfume by ID: ${id}`
       );
 
-      // AUDIT: Log start
       await this.auditClient.logInfo(
         "PROCESSING",
         "GET_PERFUME_BY_ID",
@@ -179,7 +175,6 @@ export class ProcessingService implements IProcessingService {
       const perfume = await this.perfumeRepository.findOne({ where: { id } });
 
       if (perfume) {
-        // AUDIT: Log success
         await this.auditClient.logInfo(
           "PROCESSING",
           "GET_PERFUME_BY_ID_SUCCESS",
@@ -192,7 +187,6 @@ export class ProcessingService implements IProcessingService {
         );
         return perfume;
       } else {
-        // AUDIT: Log not found
         await this.auditClient.logWarning(
           "PROCESSING",
           "GET_PERFUME_BY_ID_NOT_FOUND",
@@ -207,7 +201,6 @@ export class ProcessingService implements IProcessingService {
         error
       );
 
-      // AUDIT: Log error
       await this.auditClient.logError(
         "PROCESSING",
         "GET_PERFUME_BY_ID_FAILED",
@@ -239,18 +232,24 @@ export class ProcessingService implements IProcessingService {
     }
   }
 
-  async updatePerfumeQuantity(id: number, quantity: number): Promise<Perfume | null> {
+  async updatePerfumeQuantity(
+    id: number,
+    quantity: number
+  ): Promise<Perfume | null> {
     try {
       console.log(
         `\x1b[36m[ProcessingService]\x1b[0m Updating perfume quantity for ID: ${id}`
       );
 
-      // AUDIT: Log start
       await this.auditClient.logInfo(
         "PROCESSING",
         "UPDATE_PERFUME_QUANTITY_STARTED",
         `Updating perfume quantity for ID: ${id}`,
-        { perfumeId: id, newQuantity: quantity, timestamp: new Date().toISOString() }
+        {
+          perfumeId: id,
+          newQuantity: quantity,
+          timestamp: new Date().toISOString(),
+        }
       );
 
       const perfume = await this.getPerfumeById(id);
@@ -262,7 +261,6 @@ export class ProcessingService implements IProcessingService {
 
       const updatedPerfume = await this.perfumeRepository.save(perfume);
 
-      // AUDIT: Log success
       await this.auditClient.logInfo(
         "PROCESSING",
         "UPDATE_PERFUME_QUANTITY_SUCCESS",
@@ -283,12 +281,15 @@ export class ProcessingService implements IProcessingService {
         error
       );
 
-      // AUDIT: Log error
       await this.auditClient.logError(
         "PROCESSING",
         "UPDATE_PERFUME_QUANTITY_FAILED",
         error,
-        { perfumeId: id, newQuantity: quantity, timestamp: new Date().toISOString() }
+        {
+          perfumeId: id,
+          newQuantity: quantity,
+          timestamp: new Date().toISOString(),
+        }
       );
 
       throw new Error(`Failed to update perfume quantity: ${error.message}`);
@@ -301,7 +302,6 @@ export class ProcessingService implements IProcessingService {
         `\x1b[36m[ProcessingService]\x1b[0m Processing plants for: ${data.perfumeType}`
       );
 
-      // AUDIT: Log start
       await this.auditClient.logInfo(
         "PROCESSING",
         "PROCESS_PLANTS_STARTED",
@@ -325,38 +325,51 @@ export class ProcessingService implements IProcessingService {
       }
 
       // 3. Get available plants for processing
-      const availablePlants = await this.productionClient.getPlantsForProcessing();
-      
-      if (!availablePlants.success || !availablePlants.data || availablePlants.data.length === 0) {
+      const availablePlants =
+        await this.productionClient.getPlantsForProcessing();
+
+      if (
+        !availablePlants.success ||
+        !availablePlants.data ||
+        availablePlants.data.length === 0
+      ) {
         throw new Error("No plants available for processing");
       }
 
       // 4. Find suitable plants of the correct type
       const suitablePlants = availablePlants.data.filter(
-        (plant: any) => plant.plantType === data.perfumeType && plant.quantity >= plantsNeeded
+        (plant: any) =>
+          plant.plantType === data.perfumeType && plant.quantity >= plantsNeeded
       );
 
       if (suitablePlants.length === 0) {
-        throw new Error(`No ${data.perfumeType} plants available for processing. Need ${plantsNeeded} plants`);
+        throw new Error(
+          `No ${data.perfumeType} plants available for processing. Need ${plantsNeeded} plants`
+        );
       }
 
       // 5. Take the first available plant
       const selectedPlant = suitablePlants[0];
 
       // 6. Check if oil intensity exceeds 4.00 threshold
-      if (selectedPlant.oilIntensity > 4.00) {
+      if (selectedPlant.oilIntensity > 4.0) {
         // Balance plant oil intensity
         const userIdStr = data.userId ? data.userId.toString() : "unknown";
-        await this.balancePlantOilIntensity(selectedPlant.id, selectedPlant.oilIntensity, userIdStr);
+        await this.balancePlantOilIntensity(
+          selectedPlant.id,
+          selectedPlant.oilIntensity,
+          userIdStr
+        );
       }
 
       // 7. Harvest plants for processing via ProductionClient
       const harvestUserId = data.userId ? data.userId.toString() : "unknown";
-      const harvestResult = await this.productionClient.harvestPlantsForProcessing(
-        selectedPlant.id,
-        plantsNeeded,
-        harvestUserId
-      );
+      const harvestResult =
+        await this.productionClient.harvestPlantsForProcessing(
+          selectedPlant.id,
+          plantsNeeded,
+          harvestUserId
+        );
 
       if (!harvestResult.success) {
         throw new Error(`Failed to harvest plants: ${harvestResult.message}`);
@@ -397,12 +410,13 @@ export class ProcessingService implements IProcessingService {
 
       // 12. Complete batch
       savedBatch.markAsCompleted();
-      const completedBatch = await this.processingBatchRepository.save(savedBatch);
+      const completedBatch = await this.processingBatchRepository.save(
+        savedBatch
+      );
 
       // 13. Create processing request record
       await this.createProcessingRequestRecord(data, plantsNeeded);
 
-      // AUDIT: Log success
       await this.auditClient.logInfo(
         "PROCESSING",
         "PROCESS_PLANTS_SUCCESS",
@@ -428,7 +442,6 @@ export class ProcessingService implements IProcessingService {
         error
       );
 
-      // AUDIT: Log error
       await this.auditClient.logError(
         "PROCESSING",
         "PROCESS_PLANTS_FAILED",
@@ -466,14 +479,18 @@ export class ProcessingService implements IProcessingService {
     perfumeType?: string;
   }): Promise<ProcessingBatch[]> {
     try {
-      console.log("\x1b[36m[ProcessingService]\x1b[0m Getting all processing batches");
+      console.log(
+        "\x1b[36m[ProcessingService]\x1b[0m Getting all processing batches"
+      );
 
       let query = this.processingBatchRepository
         .createQueryBuilder("batch")
         .leftJoinAndSelect("batch.perfume", "perfume");
 
       if (filters?.status) {
-        query = query.where("batch.status = :status", { status: filters.status });
+        query = query.where("batch.status = :status", {
+          status: filters.status,
+        });
       }
 
       if (filters?.perfumeType) {
@@ -501,7 +518,6 @@ export class ProcessingService implements IProcessingService {
         `\x1b[36m[ProcessingService]\x1b[0m Canceling processing batch: ${id}`
       );
 
-      // AUDIT: Log start
       await this.auditClient.logInfo(
         "PROCESSING",
         "CANCEL_PROCESSING_BATCH_STARTED",
@@ -511,7 +527,6 @@ export class ProcessingService implements IProcessingService {
 
       const batch = await this.getProcessingBatch(id);
       if (!batch) {
-        // AUDIT: Log not found
         await this.auditClient.logWarning(
           "PROCESSING",
           "CANCEL_PROCESSING_BATCH_NOT_FOUND",
@@ -528,7 +543,6 @@ export class ProcessingService implements IProcessingService {
       batch.markAsCancelled(reason);
       await this.processingBatchRepository.save(batch);
 
-      // AUDIT: Log success
       await this.auditClient.logInfo(
         "PROCESSING",
         "CANCEL_PROCESSING_BATCH_SUCCESS",
@@ -547,7 +561,6 @@ export class ProcessingService implements IProcessingService {
         error
       );
 
-      // AUDIT: Log error
       await this.auditClient.logError(
         "PROCESSING",
         "CANCEL_PROCESSING_BATCH_FAILED",
@@ -559,11 +572,12 @@ export class ProcessingService implements IProcessingService {
     }
   }
 
-  async createProcessingRequest(data: ProcessPlantsDTO): Promise<ProcessingRequest> {
+  async createProcessingRequest(
+    data: ProcessPlantsDTO
+  ): Promise<ProcessingRequest> {
     try {
       const plantsNeeded = Math.ceil((data.bottleCount * data.bottleSize) / 50);
 
-      // AUDIT: Log start
       await this.auditClient.logInfo(
         "PROCESSING",
         "CREATE_PROCESSING_REQUEST_STARTED",
@@ -584,7 +598,6 @@ export class ProcessingService implements IProcessingService {
 
       const savedRequest = await this.processingRequestRepository.save(request);
 
-      // AUDIT: Log success
       await this.auditClient.logInfo(
         "PROCESSING",
         "CREATE_PROCESSING_REQUEST_SUCCESS",
@@ -604,7 +617,6 @@ export class ProcessingService implements IProcessingService {
         error
       );
 
-      // AUDIT: Log error
       await this.auditClient.logError(
         "PROCESSING",
         "CREATE_PROCESSING_REQUEST_FAILED",
@@ -621,12 +633,17 @@ export class ProcessingService implements IProcessingService {
     source?: string;
   }): Promise<ProcessingRequest[]> {
     try {
-      console.log("\x1b[36m[ProcessingService]\x1b[0m Getting processing requests");
+      console.log(
+        "\x1b[36m[ProcessingService]\x1b[0m Getting processing requests"
+      );
 
-      let query = this.processingRequestRepository.createQueryBuilder("request");
+      let query =
+        this.processingRequestRepository.createQueryBuilder("request");
 
       if (filters?.status) {
-        query = query.where("request.status = :status", { status: filters.status });
+        query = query.where("request.status = :status", {
+          status: filters.status,
+        });
       }
 
       if (filters?.source) {
@@ -650,9 +667,10 @@ export class ProcessingService implements IProcessingService {
 
   async processPendingRequests(): Promise<number> {
     try {
-      console.log("\x1b[36m[ProcessingService]\x1b[0m Processing pending requests");
+      console.log(
+        "\x1b[36m[ProcessingService]\x1b[0m Processing pending requests"
+      );
 
-      // AUDIT: Log start
       await this.auditClient.logInfo(
         "PROCESSING",
         "PROCESS_PENDING_REQUESTS_STARTED",
@@ -681,16 +699,12 @@ export class ProcessingService implements IProcessingService {
           await this.processingRequestRepository.save(request);
           processedCount++;
         } catch (error) {
-          console.error(
-            `Failed to process request ${request.id}:`,
-            error
-          );
+          console.error(`Failed to process request ${request.id}:`, error);
           request.markAsFailed((error as Error).message);
           await this.processingRequestRepository.save(request);
         }
       }
 
-      // AUDIT: Log completion
       await this.auditClient.logInfo(
         "PROCESSING",
         "PROCESS_PENDING_REQUESTS_COMPLETED",
@@ -705,7 +719,6 @@ export class ProcessingService implements IProcessingService {
         error
       );
 
-      // AUDIT: Log error
       await this.auditClient.logError(
         "PROCESSING",
         "PROCESS_PENDING_REQUESTS_FAILED",
@@ -717,13 +730,14 @@ export class ProcessingService implements IProcessingService {
     }
   }
 
-  async requestPerfumesForPackaging(data: PackagingRequestDTO): Promise<Packaging | null> {
+  async requestPerfumesForPackaging(
+    data: PackagingRequestDTO
+  ): Promise<Packaging | null> {
     try {
       console.log(
         `\x1b[36m[ProcessingService]\x1b[0m Packaging request for: ${data.perfumeType}`
       );
 
-      // AUDIT: Log start
       await this.auditClient.logInfo(
         "PROCESSING",
         "PACKAGING_REQUEST_STARTED",
@@ -747,7 +761,9 @@ export class ProcessingService implements IProcessingService {
       // Check availability
       if (!perfume.hasEnoughQuantity(data.quantity)) {
         throw new Error(
-          `Insufficient perfume. Available: ${perfume.getAvailableQuantity()}, Requested: ${data.quantity}`
+          `Insufficient perfume. Available: ${perfume.getAvailableQuantity()}, Requested: ${
+            data.quantity
+          }`
         );
       }
 
@@ -765,11 +781,58 @@ export class ProcessingService implements IProcessingService {
       packaging.perfumeId = perfume.id;
       packaging.quantity = data.quantity;
       packaging.status = PackagingStatus.RESERVED;
-      packaging.warehouseLocation = data.destinationWarehouse;
+
+      // ISPRAVLJENO: Razdvoji string i number warehouse
+      if (data.destinationWarehouse) {
+        if (typeof data.destinationWarehouse === "string") {
+          packaging.warehouseLocation = data.destinationWarehouse;
+        } else if (typeof data.destinationWarehouse === "number") {
+          packaging.warehouseId = data.destinationWarehouse;
+          packaging.warehouseLocation = `Warehouse ${data.destinationWarehouse}`;
+        }
+      }
 
       const savedPackaging = await this.packagingRepository.save(packaging);
 
-      // AUDIT: Log success
+      // ===== Send to Storage Service =====
+      try {
+        // Determine warehouse ID
+        const warehouseIdForStorage =
+          typeof data.destinationWarehouse === "number"
+            ? data.destinationWarehouse
+            : packaging.warehouseId || 1;
+
+        const storageResponse = await this.storageClient.receivePackaging({
+          processingPackagingId: savedPackaging.id,
+          perfumeIds: savedPackaging.getPerfumeIds(),
+          destinationWarehouseId: warehouseIdForStorage,
+          metadata: {
+            perfumeType: data.perfumeType,
+            quantity: data.quantity,
+            bottleSize: perfume.bottleSize,
+            packagingId: savedPackaging.id,
+            warehouseLocation: packaging.warehouseLocation,
+          },
+        });
+
+        if (storageResponse.success) {
+          savedPackaging.markAsSentToStorage();
+          await this.packagingRepository.save(savedPackaging);
+
+          console.log(
+            `\x1b[32m[ProcessingService]\x1b[0m Packaging ${savedPackaging.id} sent to Storage service`
+          );
+        } else {
+          console.warn(
+            `\x1b[33m[ProcessingService]\x1b[0m Packaging created but Storage service failed: ${storageResponse.message}`
+          );
+        }
+      } catch (storageError: any) {
+        console.error(
+          `\x1b[33m[ProcessingService]\x1b[0m Failed to send to Storage: ${storageError.message}`
+        );
+      }
+
       await this.auditClient.logInfo(
         "PROCESSING",
         "PACKAGING_REQUEST_SUCCESS",
@@ -779,6 +842,7 @@ export class ProcessingService implements IProcessingService {
           perfumeType: data.perfumeType,
           quantity: data.quantity,
           bottleSize: perfume.bottleSize,
+          sentToStorage: savedPackaging.isSentToStorage(),
           timestamp: new Date().toISOString(),
         }
       );
@@ -793,7 +857,6 @@ export class ProcessingService implements IProcessingService {
         error
       );
 
-      // AUDIT: Log error
       await this.auditClient.logError(
         "PROCESSING",
         "PACKAGING_REQUEST_FAILED",
@@ -807,10 +870,12 @@ export class ProcessingService implements IProcessingService {
 
   async getAvailablePackaging(): Promise<Packaging[]> {
     try {
-      console.log("\x1b[36m[ProcessingService]\x1b[0m Getting available packaging");
+      console.log(
+        "\x1b[36m[ProcessingService]\x1b[0m Getting available packaging"
+      );
 
       const packaging = await this.packagingRepository.find({
-        where: { status: PackagingStatus.AVAILABLE },
+        where: { status: PackagingStatus.RESERVED },
         relations: ["perfume"],
       });
 
@@ -821,6 +886,25 @@ export class ProcessingService implements IProcessingService {
         error
       );
       throw new Error(`Failed to get available packaging: ${error.message}`);
+    }
+  }
+
+  async getAllPackaging(): Promise<Packaging[]> {
+    try {
+      console.log("\x1b[36m[ProcessingService]\x1b[0m Getting all packaging");
+
+      const packaging = await this.packagingRepository.find({
+        relations: ["perfume"],
+        order: { createdAt: "DESC" } as any,
+      });
+
+      return packaging;
+    } catch (error: any) {
+      console.error(
+        `\x1b[31m[ProcessingService]\x1b[0m Failed to get all packaging:`,
+        error
+      );
+      throw new Error(`Failed to get all packaging: ${error.message}`);
     }
   }
 
@@ -845,21 +929,20 @@ export class ProcessingService implements IProcessingService {
     }
   }
 
-  async shipPackagingToWarehouse(
+  async sendPackagingToStorage(
     packagingId: number,
-    data: ShipPackagingDTO
-  ): Promise<Packaging | null> {
+    warehouseId?: number
+  ): Promise<boolean> {
     try {
       console.log(
-        `\x1b[36m[ProcessingService]\x1b[0m Shipping packaging to warehouse: ${packagingId}`
+        `\x1b[36m[ProcessingService]\x1b[0m Sending packaging ${packagingId} to Storage`
       );
 
-      // AUDIT: Log start
       await this.auditClient.logInfo(
         "PROCESSING",
-        "SHIP_PACKAGING_STARTED",
-        `Shipping packaging ${packagingId} to warehouse`,
-        { packagingId, ...data, timestamp: new Date().toISOString() }
+        "SEND_TO_STORAGE_STARTED",
+        `Sending packaging ${packagingId} to Storage`,
+        { packagingId, warehouseId, timestamp: new Date().toISOString() }
       );
 
       const packaging = await this.getPackagingById(packagingId);
@@ -867,51 +950,95 @@ export class ProcessingService implements IProcessingService {
         throw new Error(`Packaging ${packagingId} not found`);
       }
 
-      if (packaging.isShipped()) {
-        throw new Error(`Packaging ${packagingId} is already shipped`);
+      if (packaging.isSentToStorage()) {
+        throw new Error(`Packaging ${packagingId} already sent to Storage`);
       }
 
-      packaging.markAsShipped(data.warehouseLocation, data.trackingNumber);
-      const shippedPackaging = await this.packagingRepository.save(packaging);
-
-      // Release reserved perfume
-      const perfume = await this.getPerfumeById(packaging.perfumeId);
-      if (perfume) {
-        perfume.releaseReserved(packaging.quantity);
-        await this.perfumeRepository.save(perfume);
-      }
-
-      // AUDIT: Log success
-      await this.auditClient.logInfo(
-        "PROCESSING",
-        "SHIP_PACKAGING_SUCCESS",
-        `Shipped packaging ${packagingId} to warehouse ${data.warehouseLocation}`,
-        {
-          packagingId: packagingId,
-          warehouseLocation: data.warehouseLocation,
-          quantity: packaging.quantity,
+      const storageResponse = await this.storageClient.receivePackaging({
+        processingPackagingId: packaging.id,
+        perfumeIds: packaging.getPerfumeIds(),
+        destinationWarehouseId: warehouseId || 1,
+        metadata: {
           perfumeType: packaging.perfume?.type,
-          timestamp: new Date().toISOString(),
-        }
-      );
+          quantity: packaging.quantity,
+          packagingId: packaging.id,
+        },
+      });
 
-      return shippedPackaging;
+      if (storageResponse.success) {
+        packaging.markAsSentToStorage();
+        await this.packagingRepository.save(packaging);
+
+        await this.auditClient.logInfo(
+          "PROCESSING",
+          "SEND_TO_STORAGE_SUCCESS",
+          `Packaging ${packagingId} sent to Storage successfully`,
+          {
+            packagingId,
+            storageResponse,
+            timestamp: new Date().toISOString(),
+          }
+        );
+
+        console.log(
+          `\x1b[32m[ProcessingService]\x1b[0m Packaging ${packagingId} sent to Storage`
+        );
+        return true;
+      } else {
+        throw new Error(`Storage service error: ${storageResponse.message}`);
+      }
     } catch (error: any) {
       console.error(
-        `\x1b[31m[ProcessingService]\x1b[0m Failed to ship packaging:`,
+        `\x1b[31m[ProcessingService]\x1b[0m Failed to send packaging to Storage:`,
         error
       );
 
-      // AUDIT: Log error
       await this.auditClient.logError(
         "PROCESSING",
-        "SHIP_PACKAGING_FAILED",
+        "SEND_TO_STORAGE_FAILED",
         error,
-        { packagingId, ...data, timestamp: new Date().toISOString() }
+        { packagingId, warehouseId, timestamp: new Date().toISOString() }
       );
 
-      throw new Error(`Failed to ship packaging: ${error.message}`);
+      throw new Error(`Failed to send packaging to Storage: ${error.message}`);
     }
+  }
+
+  async updatePackagingStatus(
+    packagingId: number,
+    status: PackagingStatus
+  ): Promise<Packaging | null> {
+    try {
+      console.log(
+        `\x1b[36m[ProcessingService]\x1b[0m Updating packaging status: ${packagingId}`
+      );
+
+      const packaging = await this.getPackagingById(packagingId);
+      if (!packaging) return null;
+
+      packaging.status = status;
+      const updated = await this.packagingRepository.save(packaging);
+
+      return updated;
+    } catch (error: any) {
+      console.error(
+        `\x1b[31m[ProcessingService]\x1b[0m Failed to update packaging status:`,
+        error
+      );
+      throw new Error(`Failed to update packaging status: ${error.message}`);
+    }
+  }
+
+  async shipPackagingToWarehouse(
+    packagingId: number,
+    data: any
+  ): Promise<Packaging | null> {
+    console.warn(
+      `\x1b[33m[ProcessingService]\x1b[0m DEPRECATED: shipPackagingToWarehouse called for packaging ${packagingId}`
+    );
+    throw new Error(
+      "This method is deprecated. Use sendPackagingToStorage instead."
+    );
   }
 
   async getPerfumeInventory(type?: string): Promise<
@@ -925,7 +1052,9 @@ export class ProcessingService implements IProcessingService {
     }>
   > {
     try {
-      console.log("\x1b[36m[ProcessingService]\x1b[0m Getting perfume inventory");
+      console.log(
+        "\x1b[36m[ProcessingService]\x1b[0m Getting perfume inventory"
+      );
 
       let query = this.perfumeRepository.createQueryBuilder("perfume");
 
@@ -952,11 +1081,6 @@ export class ProcessingService implements IProcessingService {
     }
   }
 
-  calculatePlantsNeeded(bottleCount: number, bottleSize: number): number {
-    const totalMl = bottleCount * bottleSize;
-    return Math.ceil(totalMl / 50); // 1 plant = 50ml
-  }
-
   async getSystemStatus(): Promise<{
     totalPerfumes: number;
     totalBatches: number;
@@ -972,7 +1096,7 @@ export class ProcessingService implements IProcessingService {
         where: { status: ProcessingStatus.PENDING },
       });
       const availablePackaging = await this.packagingRepository.count({
-        where: { status: PackagingStatus.AVAILABLE },
+        where: { status: PackagingStatus.RESERVED },
       });
 
       return {
@@ -990,7 +1114,10 @@ export class ProcessingService implements IProcessingService {
     }
   }
 
-  // ===== PRODUCTION CLIENT INTEGRATION METHODS =====
+  calculatePlantsNeeded(bottleCount: number, bottleSize: number): number {
+    const totalMl = bottleCount * bottleSize;
+    return Math.ceil(totalMl / 50); // 1 plant = 50ml
+  }
 
   async checkPlantAvailability(
     perfumeType: string,
@@ -1004,16 +1131,15 @@ export class ProcessingService implements IProcessingService {
   }> {
     try {
       const plantsNeeded = this.calculatePlantsNeeded(bottleCount, bottleSize);
-      
-      // Call ProductionClient to get available plants
+
       const availablePlants = await this.productionClient.getAvailablePlants();
-      
+
       if (!availablePlants.success || !availablePlants.data) {
         return {
           available: false,
           plantsNeeded,
           availablePlants: 0,
-          message: "Failed to check plant availability"
+          message: "Failed to check plant availability",
         };
       }
 
@@ -1021,37 +1147,35 @@ export class ProcessingService implements IProcessingService {
         (plant: any) => plant.plantType === perfumeType
       );
 
-      const totalAvailable = matchingPlants.reduce((sum: number, plant: any) => sum + plant.quantity, 0);
+      const totalAvailable = matchingPlants.reduce(
+        (sum: number, plant: any) => sum + plant.quantity,
+        0
+      );
 
       return {
         available: totalAvailable >= plantsNeeded,
         plantsNeeded,
         availablePlants: totalAvailable,
-        message: totalAvailable >= plantsNeeded 
-          ? `Sufficient plants available (${totalAvailable} available, ${plantsNeeded} needed)`
-          : `Insufficient plants (${totalAvailable} available, ${plantsNeeded} needed)`
+        message:
+          totalAvailable >= plantsNeeded
+            ? `Sufficient plants available (${totalAvailable} available, ${plantsNeeded} needed)`
+            : `Insufficient plants (${totalAvailable} available, ${plantsNeeded} needed)`,
       };
     } catch (error: any) {
       console.error(
         `\x1b[31m[ProcessingService]\x1b[0m Failed to check plant availability:`,
         error
       );
-      
+
       return {
         available: false,
         plantsNeeded: 0,
         availablePlants: 0,
-        message: `Error checking availability: ${error.message}`
+        message: `Error checking availability: ${error.message}`,
       };
     }
   }
 
-  // ===== PRIVATE HELPER METHODS =====
-
-  /**
-   * Balansiranje jačine aromatičnih ulja
-   * Ako je pređena granica od 4.00, zatraži novu biljku i smanji joj jačinu
-   */
   private async balancePlantOilIntensity(
     processedPlantId: number,
     processedIntensity: number,
@@ -1062,7 +1186,6 @@ export class ProcessingService implements IProcessingService {
         `\x1b[36m[ProcessingService]\x1b[0m Balancing plant oil intensity for plant ${processedPlantId}`
       );
 
-      // AUDIT: Log start
       await this.auditClient.logInfo(
         "PROCESSING",
         "BALANCE_PLANT_INTENSITY_STARTED",
@@ -1075,34 +1198,33 @@ export class ProcessingService implements IProcessingService {
         }
       );
 
-      // 1. Request new plant for balancing via ProductionClient
-      const newPlantResponse = await this.productionClient.requestNewPlantForProcessing(
-        processedPlantId,
-        processedIntensity
-      );
+      const newPlantResponse =
+        await this.productionClient.requestNewPlantForProcessing(
+          processedPlantId,
+          processedIntensity
+        );
 
       if (!newPlantResponse.success || !newPlantResponse.data) {
         throw new Error("Failed to create new plant for balancing");
       }
 
       const newPlant = newPlantResponse.data;
-      
-      // 2. Calculate how much to reduce (only decimal part)
-      const excessIntensity = processedIntensity - 4.00; // 4.65 - 4.00 = 0.65
-      const reductionPercentage = excessIntensity * 100; // 65%
-      
-      // 3. Change oil intensity for the new plant via ProductionClient
+
+      const excessIntensity = processedIntensity - 4.0;
+      const reductionPercentage = excessIntensity * 100;
+
       const changeResult = await this.productionClient.changeOilIntensity(
         newPlant.id,
-        -reductionPercentage, // negative percentage = reduction
+        -reductionPercentage,
         userId
       );
 
       if (!changeResult.success) {
-        throw new Error(`Failed to balance plant oil intensity: ${changeResult.message}`);
+        throw new Error(
+          `Failed to balance plant oil intensity: ${changeResult.message}`
+        );
       }
 
-      // AUDIT: Log success
       await this.auditClient.logInfo(
         "PROCESSING",
         "BALANCE_PLANT_INTENSITY_SUCCESS",
@@ -1121,14 +1243,12 @@ export class ProcessingService implements IProcessingService {
       console.log(
         `\x1b[32m[ProcessingService]\x1b[0m Successfully balanced plant oil intensity`
       );
-
     } catch (error: any) {
       console.error(
         `\x1b[31m[ProcessingService]\x1b[0m Failed to balance plant intensity:`,
         error
       );
-      
-      // AUDIT: Log error
+
       await this.auditClient.logError(
         "PROCESSING",
         "BALANCE_PLANT_INTENSITY_FAILED",
@@ -1140,19 +1260,17 @@ export class ProcessingService implements IProcessingService {
           timestamp: new Date().toISOString(),
         }
       );
-      
+
       throw error;
     }
   }
 
   private async simulateProcessing(batch: ProcessingBatch): Promise<void> {
-    // Simulate processing time
-    const processingTime = batch.bottleCount * 2000; // 2 seconds per bottle
+    const processingTime = batch.bottleCount * 2000;
     await new Promise((resolve) =>
       setTimeout(resolve, Math.min(processingTime, 30000))
     );
 
-    // 5% chance of failure (for simulation)
     if (Math.random() < 0.05) {
       throw new Error("Processing failed: Equipment malfunction");
     }

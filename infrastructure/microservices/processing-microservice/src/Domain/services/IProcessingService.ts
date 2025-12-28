@@ -6,7 +6,7 @@ import { CreatePerfumeDTO } from "../DTOs/CreatePerfumeDTO";
 import { ProcessPlantsDTO } from "../DTOs/ProcessPlantsDTO";
 import { GetPerfumesDTO } from "../DTOs/GetPerfumesDTO";
 import { PackagingRequestDTO } from "../DTOs/PackagingRequestDTO";
-import { ShipPackagingDTO } from "../DTOs/ShipPackagingDTO";
+import { PackagingStatus } from "../enums/PackagingStatus";
 
 export interface IProcessingService {
   // Perfume Management
@@ -38,12 +38,12 @@ export interface IProcessingService {
   // Packaging
   requestPerfumesForPackaging(data: PackagingRequestDTO): Promise<Packaging | null>;
   getAvailablePackaging(): Promise<Packaging[]>;
+  getAllPackaging(): Promise<Packaging[]>;
   getPackagingById(id: number): Promise<Packaging | null>;
-  shipPackagingToWarehouse(
-    packagingId: number, 
-    data: ShipPackagingDTO
-  ): Promise<Packaging | null>;
   
+  sendPackagingToStorage(packagingId: number, warehouseId?: number): Promise<boolean>;
+  updatePackagingStatus(packagingId: number, status: PackagingStatus): Promise<Packaging | null>;
+
   // Inventory & Reporting
   getPerfumeInventory(type?: string): Promise<
     Array<{

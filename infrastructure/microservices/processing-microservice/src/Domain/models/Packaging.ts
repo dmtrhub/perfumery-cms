@@ -27,6 +27,9 @@ export class Packaging {
   @Column({ type: "varchar", length: 100, nullable: true, name: "warehouse_location" })
   warehouseLocation?: string;
 
+   @Column({ type: "int", nullable: true })
+  warehouseId?: number;
+
   @Column({ type: "varchar", length: 255, nullable: true, name: "tracking_number" })
   trackingNumber?: string;
 
@@ -41,6 +44,9 @@ export class Packaging {
 
   @Column({ type: "timestamp", nullable: true, name: "received_at" })
   receivedAt?: Date;
+
+  @Column({ type: "timestamp", nullable: true })
+  sentToStorageAt?: Date;
 
   // Mark as shipped to warehouse
   markAsShipped(warehouseLocation: string, trackingNumber?: string): void {
@@ -70,5 +76,18 @@ export class Packaging {
   getTotalVolume(): number | null {
     if (!this.perfume) return null;
     return this.quantity * this.perfume.bottleSize;
+  }
+
+  getPerfumeIds(): number[] {
+    return [this.perfumeId];
+  }
+
+  markAsSentToStorage(): void {
+    this.status = PackagingStatus.SENT_TO_STORAGE;
+    this.sentToStorageAt = new Date();
+  }
+
+  isSentToStorage(): boolean {
+    return this.status === PackagingStatus.SENT_TO_STORAGE;
   }
 }

@@ -1,4 +1,4 @@
-import { Repository, MoreThan, LessThanOrEqual } from "typeorm";
+import { Repository, MoreThan } from "typeorm";
 import { Plant } from "../Domain/models/Plant";
 import { PlantState } from "../Domain/enums/PlantState";
 import { ProductionLog } from "../Domain/models/ProductionLog";

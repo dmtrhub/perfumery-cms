@@ -5,7 +5,7 @@ export interface PackagingRequestDTO {
   perfumeType: PerfumeType;
   quantity: number;
   bottleSize?: BottleSize;
-  destinationWarehouse?: string;
+  destinationWarehouse?: string | number;
   userId?: number;
   externalRequestId?: string;
 }
