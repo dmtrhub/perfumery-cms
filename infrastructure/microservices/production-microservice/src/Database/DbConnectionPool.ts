@@ -1,20 +1,29 @@
-import "reflect-metadata";
 import { DataSource } from "typeorm";
-import dotenv from "dotenv";
-import { Plant } from "../Domain/models/Plant";
-import { ProductionLog } from "../Domain/models/ProductionLog";
+import { Logger } from "../Infrastructure/Logger";
 
-dotenv.config();
+export class DbConnectionPool {
+  private static instance: DataSource | null = null;
+  private static logger: Logger = Logger.getInstance();
 
-export const Db = new DataSource({
-  type: "mysql",
-  host: process.env.DB_HOST,
-  port: Number(process.env.DB_PORT),
-  username: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  ssl: { rejectUnauthorized: false },
-  synchronize: true,
-  logging: false,
-  entities: [Plant, ProductionLog],
-});
+  private constructor() {}
+
+  static getInstance(): DataSource {
+    if (!DbConnectionPool.instance) {
+      throw new Error("DataSource not initialized. Call setInstance() first.");
+    }
+    return DbConnectionPool.instance;
+  }
+
+  static setInstance(dataSource: DataSource): void {
+    DbConnectionPool.instance = dataSource;
+    DbConnectionPool.logger.info("DbConnectionPool", "✅ DataSource initialized");
+  }
+
+  static async closeConnection(): Promise<void> {
+    if (DbConnectionPool.instance && DbConnectionPool.instance.isInitialized) {
+      await DbConnectionPool.instance.destroy();
+      DbConnectionPool.instance = null;
+      DbConnectionPool.logger.info("DbConnectionPool", "✅ Database connection closed");
+    }
+  }
+}

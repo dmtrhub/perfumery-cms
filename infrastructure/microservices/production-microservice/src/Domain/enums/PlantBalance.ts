@@ -1,0 +1,5 @@
+export enum PlantBalance {
+  BALANCED = "BALANCED",
+  UNBALANCED = "UNBALANCED",
+  CRITICAL = "CRITICAL"
+}

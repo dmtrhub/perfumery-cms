@@ -1,15 +1,12 @@
-import { PlantState } from "../enums/PlantState";
+import { PlantStatus } from "../enums/PlantStatus";
 
-export interface PlantDTO {
-  id: number;
-  name: string;
-  oilIntensity: number;
-  latinName: string;
-  countryOfOrigin: string;
-  state: PlantState;
-  quantity: number;
-  remainingForProcessing: number;
-  availableForHarvest: boolean;
-  harvestAvailableDate?: Date;
-  createdAt: Date;
+export class PlantDTO {
+  id!: string;
+  commonName!: string;
+  latinName!: string;
+  originCountry!: string;
+  aromaticOilStrength!: number;
+  status!: PlantStatus;
+  createdAt!: Date;
+  updatedAt!: Date;
 }

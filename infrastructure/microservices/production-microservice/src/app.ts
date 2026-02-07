@@ -1,51 +1,42 @@
-import express from 'express';
-import cors from 'cors';
-import "reflect-metadata";
-import { initializeDatabase } from './Database/InitializeConnection';
-import dotenv from 'dotenv';
-import { Repository } from 'typeorm';
-import { Plant } from './Domain/models/Plant';
-import { ProductionLog } from './Domain/models/ProductionLog';
-import { Db } from './Database/DbConnectionPool';
-import { IProductionService } from './Domain/services/IProductionService';
-import { ProductionService } from './Services/ProductionService';
-import { ProductionController } from './WebAPI/controllers/ProductionController';
-import { ILogerService } from './Domain/services/ILogerService';
-import { LogerService } from './Services/LogerService';
+import express, { Application, Request, Response } from "express";
+import dotenv from "dotenv";
+import { AppDataSource } from "./Database/InitializeConnection";
+import { Plant } from "./Domain/models/Plant";
+import { ProductionController } from "./WebAPI/controllers/ProductionController";
+import { AuditClient } from "./External/AuditClient";
+import { ErrorHandler } from "./Middlewares/ErrorHandler";
+import { Logger } from "./Infrastructure/Logger";
 
-dotenv.config({ quiet: true });
+dotenv.config();
 
-const app = express();
-
-// Read CORS settings from environment
-const corsOrigin = process.env.CORS_ORIGIN ?? "http://localhost:4000";
-const corsMethods = process.env.CORS_METHODS?.split(",").map(m => m.trim()) ?? ["GET", "POST", "PUT", "DELETE"];
-
-// Protected microservice from unauthorized access
-app.use(cors({
-  origin: corsOrigin,
-  methods: corsMethods,
-}));
+const logger = Logger.getInstance();
+const app: Application = express();
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-initializeDatabase();
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:5000").split(",").map(o => o.trim());
 
-// ORM Repositories
-const plantRepository: Repository<Plant> = Db.getRepository(Plant);
-const productionLogRepository: Repository<ProductionLog> = Db.getRepository(ProductionLog);
+app.use((req: Request, res: Response, next) => {
+  const origin = req.headers.origin as string;
+  if (allowedOrigins.includes(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
+  }
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  next();
+});
 
-// Services
-const productionService: IProductionService = new ProductionService(
-  plantRepository,
-  productionLogRepository
-);
-const logerService: ILogerService = new LogerService();
+const plantRepository = AppDataSource.getRepository(Plant);
+const auditClient = new AuditClient();
+const productionController = new ProductionController(plantRepository, auditClient);
 
-// WebAPI routes
-const productionController = new ProductionController(productionService, logerService);
+app.use("/api/v1/production", productionController.getRouter());
 
-// Registering routes
-app.use('/api/v1', productionController.getRouter());
+app.get("/health", (req: Request, res: Response) => {
+  res.status(200).json({ status: "OK", service: "production-microservice" });
+});
+
+app.use(ErrorHandler);
 
 export default app;

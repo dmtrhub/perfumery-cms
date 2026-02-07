@@ -1,7 +1,25 @@
-import app from './app';
+import "reflect-metadata";
+import app from "./app";
+import { AppDataSource } from "./Database/InitializeConnection";
+import { DbConnectionPool } from "./Database/DbConnectionPool";
+import { Logger } from "./Infrastructure/Logger";
 
-const PORT = process.env.PORT || 3005;
+const logger = Logger.getInstance();
+const PORT = process.env.PORT || 5004;
 
-app.listen(PORT, () => {
-  console.log(`\x1b[32m[Production Service]\x1b[0m Running on port ${PORT}`);
-});
+async function startServer() {
+  try {
+    await AppDataSource.initialize();
+    DbConnectionPool.setInstance(AppDataSource);
+
+    app.listen(PORT, () => {
+      logger.info("Server", `✅ Production Microservice running on port ${PORT}`);
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    logger.error("Server", `❌ Failed to start server: ${message}`);
+    process.exit(1);
+  }
+}
+
+startServer();

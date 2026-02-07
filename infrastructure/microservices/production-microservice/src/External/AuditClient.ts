@@ -1,108 +1,86 @@
-import axios from "axios";
+import axios, { AxiosInstance } from "axios";
+import { IAuditClient } from "./IAuditClient";
+import { Logger } from "../Infrastructure/Logger";
 
-export class AuditClient {
-  private baseUrl: string;
+/**
+ * AuditClient
+ * 
+ * Klijent za komunikaciju sa Audit mikroservisom
+ */
+export class AuditClient implements IAuditClient {
+  private readonly logger: Logger;
+  private readonly auditServiceUrl: string;
+  private readonly axiosInstance: AxiosInstance;
 
-  constructor(
-    baseUrl: string = process.env.AUDIT_SERVICE_URL || "http://localhost:3004"
-  ) {
-    this.baseUrl = baseUrl;
+  constructor() {
+    this.logger = Logger.getInstance();
+    this.auditServiceUrl = process.env.AUDIT_SERVICE_URL || "http://localhost:5003";
+    this.axiosInstance = axios.create({
+      baseURL: this.auditServiceUrl,
+      timeout: 5000,
+      headers: {
+        "X-Service-Name": "PRODUCTION_SERVICE"
+      }
+    });
   }
 
-  async log(data: {
-    service: string;
-    action: string;
-    userId?: number;
-    userEmail?: string;
-    entityId?: string;
-    entityType?: string;
-    logLevel?: string;
-    message: string;
-    details?: Record<string, any>;
-    ipAddress?: string;
-    userAgent?: string;
-    successful?: boolean;
-    source?: string;
-  }): Promise<void> {
+  /**
+   * Log INFO
+   */
+  async logInfo(serviceName: string, description: string, userId?: string): Promise<void> {
     try {
-      await axios.post(`${this.baseUrl}/api/v1/logs`, data, {
-        timeout: 5000, // 5 second timeout
+      this.logger.debug("AuditClient", `Logging INFO: ${description}`);
+
+      await this.axiosInstance.post("/api/v1/audit/logs", {
+        type: "INFO",
+        serviceName,
+        description,
+        userId,
+        ipAddress: "127.0.0.1"
       });
     } catch (error: any) {
-      // Fallback to console if audit service is unavailable
-      console.error(
-        "\x1b[31m[AuditClient]\x1b[0m Failed to send audit log:",
-        error.message
-      );
-      console.log("\x1b[35m[AuditClient]\x1b[0m Audit event (fallback):", {
-        ...data,
-        timestamp: new Date().toISOString(),
-      });
+      const message = error.response?.data?.message || error.response?.status || error.message || "Unknown error";
+      this.logger.warn("AuditClient", `Failed to log INFO: ${message}`);
     }
   }
 
-  async logInfo(
-    service: string,
-    action: string,
-    message: string,
-    details?: any
-  ): Promise<void> {
-    return this.log({
-      service,
-      action,
-      logLevel: "INFO",
-      message,
-      details,
-    });
+  /**
+   * Log WARNING
+   */
+  async logWarning(serviceName: string, description: string, userId?: string): Promise<void> {
+    try {
+      this.logger.debug("AuditClient", `Logging WARNING: ${description}`);
+
+      await this.axiosInstance.post("/api/v1/audit/logs", {
+        type: "WARNING",
+        serviceName,
+        description,
+        userId,
+        ipAddress: "127.0.0.1"
+      });
+    } catch (error: any) {
+      const message = error.response?.data?.message || error.response?.status || error.message || "Unknown error";
+      this.logger.warn("AuditClient", `Failed to log WARNING: ${message}`);
+    }
   }
 
-  async logError(
-    service: string,
-    action: string,
-    error: Error,
-    context?: any
-  ): Promise<void> {
-    return this.log({
-      service,
-      action,
-      logLevel: "ERROR",
-      message: error.message,
-      details: {
-        error: error.stack,
-        context,
-      },
-      successful: false,
-    });
-  }
+  /**
+   * Log ERROR
+   */
+  async logError(serviceName: string, description: string, userId?: string): Promise<void> {
+    try {
+      this.logger.debug("AuditClient", `Logging ERROR: ${description}`);
 
-  async logWarning(
-    service: string,
-    action: string,
-    message: string,
-    details?: any
-  ): Promise<void> {
-    return this.log({
-      service,
-      action,
-      logLevel: "WARNING",
-      message,
-      details,
-      successful: true,
-    });
-  }
-
-  async logSystemEvent(
-    service: string,
-    message: string,
-    details?: any
-  ): Promise<void> {
-    return this.log({
-      service,
-      action: "SYSTEM_EVENT",
-      logLevel: "INFO",
-      message,
-      details,
-      source: "SYSTEM",
-    });
+      await this.axiosInstance.post("/api/v1/audit/logs", {
+        type: "ERROR",
+        serviceName,
+        description,
+        userId,
+        ipAddress: "127.0.0.1"
+      });
+    } catch (error: any) {
+      const message = error.response?.data?.message || error.response?.status || error.message || "Unknown error";
+      this.logger.warn("AuditClient", `Failed to log ERROR: ${message}`);
+    }
   }
 }

@@ -1,4 +1,4 @@
-export enum PlantState {
+export enum PlantStatus {
   PLANTED = "PLANTED",
   HARVESTED = "HARVESTED",
   PROCESSED = "PROCESSED"
