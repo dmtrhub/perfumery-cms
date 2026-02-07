@@ -1,23 +1,41 @@
-import { Entity, PrimaryGeneratedColumn, Column } from "typeorm";
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+} from "typeorm";
 import { UserRole } from "../enums/UserRole";
 
 @Entity("users")
 export class User {
-  @PrimaryGeneratedColumn()
-  id!: number;
+  @PrimaryGeneratedColumn("uuid")
+  id!: string;
 
-  @Column({ type: "varchar", unique: true, length: 100 })
+  @Column({ unique: true, length: 30 })
   username!: string;
 
-  @Column({type: "enum", enum: UserRole, default: UserRole.SELLER })
-  role!: UserRole;
-
-  @Column({ type: "varchar", length: 255 })
+  @Column()
   password!: string;
 
-  @Column({ type: "varchar", length: 255, unique: true })
+  @Column({ unique: true, length: 100 })
   email!: string;
 
+  @Column({ length: 50 })
+  firstName!: string;
+
+  @Column({ length: 50 })
+  lastName!: string;
+
   @Column({ type: "longtext", nullable: true })
-  profileImage!: string | null;
+  profilePicture?: string; // base64
+
+  @Column({ type: "enum", enum: UserRole })
+  role!: UserRole;
+
+  @CreateDateColumn()
+  createdAt!: Date;
+
+  @UpdateDateColumn()
+  updatedAt!: Date;
 }

@@ -1,11 +1,52 @@
-import { Db } from "./DbConnectionPool";
+import "reflect-metadata";
+import { DataSource } from "typeorm";
+import dotenv from "dotenv";
+import { User } from "../Domain/models/User";
+import { DbConnectionPool } from "./DbConnectionPool";
+import { Logger } from "../Infrastructure/Logger";
 
-export async function initialize_database() {
+dotenv.config();
+
+export const AppDataSource = new DataSource({
+  type: "mysql",
+  host: process.env.DB_HOST || "localhost",
+  port: parseInt(process.env.DB_PORT || "3306", 10),
+  username: process.env.DB_USER || "root",
+  password: process.env.DB_PASSWORD || "1234",
+  database: process.env.DB_NAME || "korisnici",
+  synchronize: process.env.NODE_ENV === "development",
+  logging: process.env.NODE_ENV === "development",
+  entities: [User],
+  migrations: []
+});
+
+export const initializeDatabase = async (): Promise<void> => {
+  const logger = Logger.getInstance();
+
   try {
-    await Db.initialize();
-    console.log("\x1b[34m[DbConn@1.12.4]\x1b[0m Database connected");
+    if (AppDataSource.isInitialized) {
+      logger.warn("Database", "Database already initialized");
+      return;
+    }
 
-  } catch (err) {
-    console.error("\x1b[31m[DbConn@1.12.4]\x1b[0m Error during DataSource initialization ", err);
+    logger.info("Database", "Initializing database connection...");
+
+    await AppDataSource.initialize();
+    DbConnectionPool.setInstance(AppDataSource);
+
+    logger.info("Database", `✅ User Database initialized successfully (${process.env.DB_NAME})`);
+  } catch (error: any) {
+    logger.error("Database", `❌ Database initialization failed: ${error.message}`);
+    throw error;
   }
-}
+};
+
+export const closeDatabase = async (): Promise<void> => {
+  try {
+    await DbConnectionPool.closeConnection();
+  } catch (error) {
+    const logger = Logger.getInstance();
+    logger.error("Database", "Failed to close database");
+    throw error;
+  }
+};
