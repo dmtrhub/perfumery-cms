@@ -1,418 +1,333 @@
-import { Request, Response, Router } from "express";
-import { IStorageService } from "../../Domain/services/IStorageService";
-import { ILogerService } from "../../Domain/services/ILogerService";
+import { Router, Request, Response } from "express";
+import { Repository } from "typeorm";
+import { Warehouse } from "../../Domain/models/Warehouse";
+import { StoragePackaging } from "../../Domain/models/StoragePackaging";
+import { WarehouseRepositoryService } from "../../Services/WarehouseRepositoryService";
+import { PackagingRepositoryService } from "../../Services/PackagingRepositoryService";
+import { IAuditClient } from "../../External/IAuditClient";
+import { IProcessingClient } from "../../External/IProcessingClient";
+import { Logger } from "../../Infrastructure/Logger";
+import { asyncHandler } from "../../Infrastructure/asyncHandler";
+import { ValidatorMiddleware } from "../../Middlewares/ValidatorMiddleware";
 import { CreateWarehouseDTO } from "../../Domain/DTOs/CreateWarehouseDTO";
 import { ReceivePackagingDTO } from "../../Domain/DTOs/ReceivePackagingDTO";
-import { ShipPackagingDTO } from "../../Domain/DTOs/ShipPackagingDTO";
-import {
-  validateCreateWarehouse,
-  validateReceivePackaging,
-  validateShipPackaging,
-  validateIdParam,
-  validatePackagingSearchParams,
-} from "../validators/StorageValidator";
+import { SendToSalesDTO } from "../../Domain/DTOs/SendToSalesDTO";
 
+/**
+ * StorageController
+ * HTTP endpoints za skladištenje
+ */
 export class StorageController {
   private router: Router;
+  private readonly logger: Logger;
+  private readonly warehouseService: WarehouseRepositoryService;
+  private readonly packagingService: PackagingRepositoryService;
 
   constructor(
-    private storageService: IStorageService,
-    private loggerService: ILogerService
+    warehouseRepository: Repository<Warehouse>,
+    packagingRepository: Repository<StoragePackaging>,
+    auditClient: IAuditClient,
+    processingClient: IProcessingClient
   ) {
     this.router = Router();
+    this.logger = Logger.getInstance();
+    this.warehouseService = new WarehouseRepositoryService(warehouseRepository, auditClient);
+    this.packagingService = new PackagingRepositoryService(
+      packagingRepository,
+      warehouseRepository,
+      auditClient,
+      processingClient
+    );
     this.initializeRoutes();
   }
 
   private initializeRoutes(): void {
-    // Warehouse management
-    this.router.post("/warehouses", this.createWarehouse.bind(this));
-    this.router.get("/warehouses", this.getAllWarehouses.bind(this));
-    this.router.get("/warehouses/:id", this.getWarehouseById.bind(this));
-    this.router.get(
-      "/warehouses/:id/capacity",
-      this.getWarehouseCapacity.bind(this)
+    // Warehouse routes
+    this.router.post(
+      "/warehouses",
+      ValidatorMiddleware(CreateWarehouseDTO),
+      asyncHandler(this.createWarehouse.bind(this))
     );
 
-    // Packaging management
-    this.router.post("/packaging/receive", this.receivePackaging.bind(this));
-    this.router.get("/packaging", this.getAllPackaging.bind(this));
     this.router.get(
-      "/packaging/available",
-      this.getAvailablePackaging.bind(this)
+      "/warehouses",
+      asyncHandler(this.getAllWarehouses.bind(this))
     );
-    this.router.get("/packaging/:id", this.getPackagingById.bind(this));
 
-    // Shipping operations
-    this.router.post("/packaging/ship", this.shipToSales.bind(this));
+    this.router.get(
+      "/warehouses/:id",
+      asyncHandler(this.getWarehouseById.bind(this))
+    );
 
-    // System status
-    this.router.get("/status", this.getSystemStatus.bind(this));
+    // Packaging routes
+    this.router.post(
+      "/receive",
+      ValidatorMiddleware(ReceivePackagingDTO),
+      asyncHandler(this.receivePackaging.bind(this))
+    );
 
-    // Health check
-    this.router.get("/health", this.healthCheck.bind(this));
+    this.router.post(
+      "/send-to-sales",
+      this.extractUserRole.bind(this),
+      ValidatorMiddleware(SendToSalesDTO),
+      asyncHandler(this.sendToSales.bind(this))
+    );
+
+    this.router.get(
+      "/packagings",
+      asyncHandler(this.getAllPackagings.bind(this))
+    );
+
+    this.router.get(
+      "/packagings/:id",
+      asyncHandler(this.getPackagingById.bind(this))
+    );
   }
 
+  /**
+   * POST /api/v1/storage/warehouses
+   */
   private async createWarehouse(req: Request, res: Response): Promise<void> {
-    try {
-      await this.loggerService.log("Create warehouse request received");
+    this.logger.info("StorageController", `🏭 POST /api/v1/storage/warehouses`);
 
-      const validation = validateCreateWarehouse(req.body);
-      if (!validation.valid) {
-        res.status(400).json({
-          success: false,
-          message: "Validation failed",
-          errors: validation.errors,
-        });
-        return;
-      }
+    const dto = req.body as CreateWarehouseDTO;
+    const warehouse = await this.warehouseService.createWarehouse(dto);
 
-      const data: CreateWarehouseDTO = req.body;
-      const warehouse = await this.storageService.createWarehouse(data);
-
-      res.status(201).json({
-        success: true,
-        message: "Warehouse created successfully",
-        data: warehouse,
-      });
-    } catch (error: any) {
-      await this.loggerService.log(
-        `Error creating warehouse: ${error.message}`
-      );
-      res.status(400).json({
-        success: false,
-        message: error.message || "Failed to create warehouse",
-      });
-    }
-  }
-
-  private async getAllWarehouses(req: Request, res: Response): Promise<void> {
-    try {
-      await this.loggerService.log("Get all warehouses request received");
-
-      const warehouses = await this.storageService.getAllWarehouses();
-
-      res.status(200).json({
-        success: true,
-        data: warehouses,
-        count: warehouses.length,
-      });
-    } catch (error: any) {
-      await this.loggerService.log(
-        `Error getting all warehouses: ${error.message}`
-      );
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to fetch warehouses",
-      });
-    }
-  }
-
-  private async getWarehouseById(req: Request, res: Response): Promise<void> {
-    try {
-      const id = req.params.id;
-      await this.loggerService.log(
-        `Get warehouse by ID request received: ${id}`
-      );
-
-      const validation = validateIdParam(id);
-      if (!validation.valid) {
-        res.status(400).json({
-          success: false,
-          message: "Validation failed",
-          errors: validation.errors,
-        });
-        return;
-      }
-
-      const warehouse = await this.storageService.getWarehouseById(
-        validation.parsedId!
-      );
-
-      if (warehouse) {
-        res.status(200).json({
-          success: true,
-          data: warehouse,
-        });
-      } else {
-        res.status(404).json({
-          success: false,
-          message: "Warehouse not found",
-        });
-      }
-    } catch (error: any) {
-      await this.loggerService.log(
-        `Error getting warehouse by ID: ${error.message}`
-      );
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to fetch warehouse",
-      });
-    }
-  }
-
-  private async receivePackaging(req: Request, res: Response): Promise<void> {
-    try {
-      await this.loggerService.log("Receive packaging request received");
-
-      const validation = validateReceivePackaging(req.body);
-      if (!validation.valid) {
-        res.status(400).json({
-          success: false,
-          message: "Validation failed",
-          errors: validation.errors,
-        });
-        return;
-      }
-
-      const data: ReceivePackagingDTO = req.body;
-      const packaging = await this.storageService.receivePackaging(data);
-
-      res.status(201).json({
-        success: true,
-        message: "Packaging received successfully",
-        data: packaging,
-      });
-    } catch (error: any) {
-      await this.loggerService.log(
-        `Error receiving packaging: ${error.message}`
-      );
-      res.status(400).json({
-        success: false,
-        message: error.message || "Failed to receive packaging",
-      });
-    }
-  }
-
-  // DODATA METODA: Get all packaging
-  private async getAllPackaging(req: Request, res: Response): Promise<void> {
-    try {
-      await this.loggerService.log("Get all packaging request received");
-
-      const validation = validatePackagingSearchParams(req.query);
-      if (!validation.valid) {
-        res.status(400).json({
-          success: false,
-          message: "Validation failed",
-          errors: validation.errors,
-        });
-        return;
-      }
-
-      const packaging = await this.storageService.getAllPackaging();
-
-      // Filtriranje po statusu ako je prosleđen
-      let filteredPackaging = packaging;
-      if (validation.validatedParams?.status) {
-        filteredPackaging = filteredPackaging.filter(
-          (p) => p.status === validation.validatedParams!.status
-        );
-      }
-
-      // Filtriranje po warehouseId ako je prosleđen
-      if (validation.validatedParams?.warehouseId) {
-        filteredPackaging = filteredPackaging.filter(
-          (p) => p.warehouse_id === validation.validatedParams!.warehouseId
-        );
-      }
-
-      // Paginacija
-      const limit = validation.validatedParams?.limit || 50;
-      const offset = validation.validatedParams?.offset || 0;
-      const paginatedPackaging = filteredPackaging.slice(
-        offset,
-        offset + limit
-      );
-
-      res.status(200).json({
-        success: true,
-        data: paginatedPackaging,
-        pagination: {
-          total: filteredPackaging.length,
-          limit,
-          offset,
-          hasMore: offset + limit < filteredPackaging.length,
-        },
-      });
-    } catch (error: any) {
-      await this.loggerService.log(
-        `Error getting all packaging: ${error.message}`
-      );
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to fetch packaging",
-      });
-    }
-  }
-
-  // DODATA METODA: Get available packaging
-  private async getAvailablePackaging(
-    req: Request,
-    res: Response
-  ): Promise<void> {
-    try {
-      await this.loggerService.log("Get available packaging request received");
-
-      const packaging = await this.storageService.getAvailablePackaging();
-
-      res.status(200).json({
-        success: true,
-        data: packaging,
-        count: packaging.length,
-      });
-    } catch (error: any) {
-      await this.loggerService.log(
-        `Error getting available packaging: ${error.message}`
-      );
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to fetch available packaging",
-      });
-    }
-  }
-
-  // DODATA METODA: Get packaging by ID
-  private async getPackagingById(req: Request, res: Response): Promise<void> {
-    try {
-      const id = req.params.id;
-      await this.loggerService.log(
-        `Get packaging by ID request received: ${id}`
-      );
-
-      const validation = validateIdParam(id);
-      if (!validation.valid) {
-        res.status(400).json({
-          success: false,
-          message: "Validation failed",
-          errors: validation.errors,
-        });
-        return;
-      }
-
-      const packaging = await this.storageService.getPackagingById(
-        validation.parsedId!
-      );
-
-      if (packaging) {
-        res.status(200).json({
-          success: true,
-          data: packaging,
-        });
-      } else {
-        res.status(404).json({
-          success: false,
-          message: "Packaging not found",
-        });
-      }
-    } catch (error: any) {
-      await this.loggerService.log(
-        `Error getting packaging by ID: ${error.message}`
-      );
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to fetch packaging",
-      });
-    }
-  }
-
-  private async shipToSales(req: Request, res: Response): Promise<void> {
-    try {
-      await this.loggerService.log("Ship to sales request received");
-
-      const validation = validateShipPackaging(req.body);
-      if (!validation.valid) {
-        res.status(400).json({
-          success: false,
-          message: "Validation failed",
-          errors: validation.errors,
-        });
-        return;
-      }
-
-      const data: ShipPackagingDTO = req.body;
-      const shippedPackages = await this.storageService.shipToSales(data);
-
-      res.status(200).json({
-        success: true,
-        message: `Successfully shipped ${shippedPackages.length} packages to Sales`,
-        data: shippedPackages,
-      });
-    } catch (error: any) {
-      await this.loggerService.log(`Error shipping to sales: ${error.message}`);
-      res.status(400).json({
-        success: false,
-        message: error.message || "Failed to ship packages",
-      });
-    }
-  }
-
-  private async getWarehouseCapacity(
-    req: Request,
-    res: Response
-  ): Promise<void> {
-    try {
-      const id = req.params.id;
-      await this.loggerService.log(`Get warehouse capacity request: ${id}`);
-
-      const validation = validateIdParam(id);
-      if (!validation.valid) {
-        res.status(400).json({
-          success: false,
-          message: "Validation failed",
-          errors: validation.errors,
-        });
-        return;
-      }
-
-      const capacity = await this.storageService.checkWarehouseCapacity(
-        validation.parsedId!
-      );
-
-      res.status(200).json({
-        success: true,
-        data: capacity,
-      });
-    } catch (error: any) {
-      await this.loggerService.log(
-        `Error getting warehouse capacity: ${error.message}`
-      );
-      res.status(400).json({
-        success: false,
-        message: error.message || "Failed to get capacity",
-      });
-    }
-  }
-
-  private async getSystemStatus(req: Request, res: Response): Promise<void> {
-    try {
-      await this.loggerService.log("Get system status request received");
-
-      const status = await this.storageService.getSystemStatus();
-
-      res.status(200).json({
-        success: true,
-        data: status,
-      });
-    } catch (error: any) {
-      await this.loggerService.log(
-        `Error getting system status: ${error.message}`
-      );
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to get system status",
-      });
-    }
-  }
-
-  private healthCheck(req: Request, res: Response): void {
-    res.status(200).json({
-      status: "OK",
-      service: "Storage Service",
-      timestamp: new Date().toISOString(),
-      version: "1.0.0",
+    res.status(201).json({
+      success: true,
+      code: "WAREHOUSE_CREATED",
+      data: warehouse.toJSON(),
+      timestamp: new Date().toISOString()
     });
   }
 
-  public getRouter(): Router {
+  /**
+   * GET /api/v1/storage/warehouses
+   */
+  private async getAllWarehouses(req: Request, res: Response): Promise<void> {
+    this.logger.info("StorageController", `📋 GET /api/v1/storage/warehouses`);
+
+    const warehouses = await this.warehouseService.getAllWarehouses();
+
+    res.status(200).json({
+      success: true,
+      code: "WAREHOUSES_RETRIEVED",
+      data: warehouses.map(w => w.toJSON()),
+      count: warehouses.length,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  /**
+   * GET /api/v1/storage/warehouses/:id
+   */
+  private async getWarehouseById(req: Request, res: Response): Promise<void> {
+    const { id } = req.params;
+    this.logger.info("StorageController", `📄 GET /api/v1/storage/warehouses/${id}`);
+
+    const warehouse = await this.warehouseService.getWarehouseById(id);
+
+    res.status(200).json({
+      success: true,
+      code: "WAREHOUSE_RETRIEVED",
+      data: warehouse.toJSON(),
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  /**
+   * POST /api/v1/storage/receive
+   */
+  private async receivePackaging(req: Request, res: Response): Promise<void> {
+    this.logger.info("StorageController", `📦 POST /api/v1/storage/receive`);
+
+    const { packagingId } = req.body as ReceivePackagingDTO;
+    const packaging = await this.packagingService.receivePackaging(packagingId);
+
+    res.status(201).json({
+      success: true,
+      code: "PACKAGING_RECEIVED",
+      data: packaging.toJSON(),
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  /**
+   * POST /api/v1/storage/send-to-sales
+   */
+  private async sendToSales(req: Request, res: Response): Promise<void> {
+    this.logger.info("StorageController", `📤 POST /api/v1/storage/send-to-sales`);
+
+    try {
+      const { count, userRole } = req.body as { count: number; userRole: string };
+      
+      this.logger.info("StorageController", `Sending ${count} packagings for role: ${userRole}`);
+      
+      const packagings = await this.packagingService.sendToSales(count, userRole);
+
+      res.status(200).json({
+        success: true,
+        code: "PACKAGINGS_SENT_TO_SALES",
+        message: `Uspešno poslano ${packagings.length} pakovanja u prodaju`,
+        data: packagings.map(p => p.toJSON()),
+        count: packagings.length,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error: any) {
+      const message = error?.message || "Nepoznata greška";
+      const isValidationError = message.includes("može zahtevati");
+      
+      if (isValidationError) {
+        this.logger.warn("StorageController", `⚠️ Validation error: ${message}`);
+        res.status(400).json({
+          success: false,
+          code: "VALIDATION_ERROR",
+          message: message,
+          statusCode: 400,
+          timestamp: new Date().toISOString()
+        });
+      } else {
+        this.logger.error("StorageController", `❌ Error sending packagings: ${message}`);
+        res.status(500).json({
+          success: false,
+          code: "SEND_ERROR",
+          message: message,
+          statusCode: 500,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
+  }
+
+  /**
+   * Middleware za ekstraktovanje uloge iz JWT tokena
+   */
+  private extractUserRole(req: Request, res: Response, next: Function): void {
+    const authHeader = req.headers.authorization;
+    const roleHeader = req.headers['x-user-role'] as string;
+
+    try {
+      let userRole: string | undefined;
+
+      // Prvo pokušaj Bearer token
+      if (authHeader?.startsWith("Bearer ")) {
+        const token = authHeader.substring(7);
+        const parts = token.split('.');
+
+        if (parts.length !== 3) {
+          throw new Error("Invalid token format");
+        }
+
+        const decoded = JSON.parse(Buffer.from(parts[1], 'base64').toString());
+        userRole = decoded.role || decoded.userRole;
+
+        if (!userRole) {
+          throw new Error("User role not found in token");
+        }
+
+        this.logger.debug("StorageController", `✅ Extracted role from JWT token: ${userRole}`);
+      } 
+      // Ako nema tokena, koristi X-User-Role header ako postoji
+      else if (roleHeader) {
+        userRole = roleHeader;
+        this.logger.warn("StorageController", `⚠️ No Bearer token provided, using X-User-Role header: ${userRole}`);
+      }
+      // Ako nema ni tokena ni headera, vrati grešku
+      else {
+        res.status(401).json({
+          success: false,
+          code: "UNAUTHORIZED",
+          message: "Authorization header with Bearer token or X-User-Role header is required",
+          statusCode: 401,
+          timestamp: new Date().toISOString()
+        });
+        return;
+      }
+
+      // Dodaj ulogu u body za ValidatorMiddleware
+      req.body.userRole = userRole;
+      next();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Invalid token";
+      this.logger.error("StorageController", `❌ Failed to extract role from JWT: ${message}`);
+
+      res.status(401).json({
+        success: false,
+        code: "UNAUTHORIZED",
+        message: `Invalid or expired token: ${message}`,
+        statusCode: 401,
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+
+  /**
+   * GET /api/v1/storage/packagings
+   */
+  private async getAllPackagings(req: Request, res: Response): Promise<void> {
+    this.logger.info("StorageController", `📋 GET /api/v1/storage/packagings`);
+
+    const packagings = await this.packagingService.getAllPackagings();
+
+    res.status(200).json({
+      success: true,
+      code: "PACKAGINGS_RETRIEVED",
+      data: packagings.map(p => p.toJSON()),
+      count: packagings.length,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  /**
+   * GET /api/v1/storage/packagings/:id
+   */
+  private async getPackagingById(req: Request, res: Response): Promise<void> {
+    const { id } = req.params;
+    this.logger.info("StorageController", `📄 GET /api/v1/storage/packagings/${id}`);
+
+    const packaging = await this.packagingService.getPackagingById(id);
+
+    res.status(200).json({
+      success: true,
+      code: "PACKAGING_RETRIEVED",
+      data: packaging.toJSON(),
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  /**
+   * DEBUG: GET /api/v1/storage/debug/packagings-by-status/:status
+   */
+  private async getPackagingsByStatus(req: Request, res: Response): Promise<void> {
+    const { status } = req.params;
+    this.logger.info("StorageController", `🔍 DEBUG GET /debug/packagings-by-status/${status}`);
+
+    try {
+      const packagings = await (this.packagingService as any).packagingRepository?.find({
+        where: { status: status.toUpperCase() },
+        relations: ["warehouse"]
+      });
+
+      res.status(200).json({
+        success: true,
+        code: "DEBUG_PACKAGINGS_RETRIEVED",
+        message: `Found ${packagings?.length || 0} packagings with status ${status}`,
+        data: packagings?.map((p: any) => p.toJSON()) || [],
+        count: packagings?.length || 0,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      this.logger.error("StorageController", `❌ Debug error: ${error instanceof Error ? error.message : 'Unknown'}`);
+      res.status(500).json({
+        success: false,
+        code: "DEBUG_ERROR",
+        message: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+
+  getRouter(): Router {
     return this.router;
   }
 }

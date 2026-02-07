@@ -1,49 +1,87 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from "typeorm";
-import { Warehouse } from "./Warehouse";
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  Index,
+  ManyToOne,
+  JoinColumn
+} from "typeorm";
 import { PackagingStatus } from "../enums/PackagingStatus";
+import { Warehouse } from "./Warehouse";
 
-@Entity("storage_packaging")
+/**
+ * StoragePackaging Entity
+ * Predstavlja ambalažu u skladištu
+ */
+@Entity("storage_packagings")
+@Index(["status"])
 export class StoragePackaging {
-  @PrimaryGeneratedColumn()
-  id!: number;
+  @PrimaryGeneratedColumn("uuid")
+  id!: string;
 
-  @Column({ type: "int", unique: true })
-  processingPackagingId!: number; // ID from Processing Microservice
+  @Column({ type: "uuid" })
+  originalPackagingId!: string;
+
+  @Column({ type: "uuid" })
+  warehouseId!: string;
 
   @Column({ type: "json" })
-  perfumeIds!: number[]; // List of perfume IDs contained in this packaging
+  perfumeIds!: string[]; // JSON array
 
-  @Column({ 
-    type: "enum", 
-    enum: PackagingStatus, 
-    default: PackagingStatus.IN_STORAGE 
-  })
+  @Column({ type: "json", nullable: true })
+  perfumes?: any[]; // Čuva sve perfume detalje (name, type, netQuantityMl, serialNumber...)
+
+  @Column({ type: "enum", enum: PackagingStatus, default: PackagingStatus.STORED })
   status!: PackagingStatus;
 
-  @Column({ type: "varchar", length: 255, nullable: true })
-  trackingNumber?: string;
+  @Column({ type: "datetime", nullable: true })
+  sentToSalesAt?: Date;
 
-  @ManyToOne(() => Warehouse, (warehouse) => warehouse.packages)
-  @JoinColumn({ name: "warehouse_id" })
+  @ManyToOne(() => Warehouse, warehouse => warehouse.packagings)
+  @JoinColumn({ name: "warehouseId" })
   warehouse!: Warehouse;
 
-  @Column()
-  warehouse_id!: number;
+  @CreateDateColumn()
+  createdAt!: Date;
 
-  @Column({ type: "timestamp", default: () => "CURRENT_TIMESTAMP" })
-  receivedAt!: Date;
+  toJSON() {
+    let perfumeIds: string[] = [];
+    
+    if (this.perfumeIds) {
+      if (typeof this.perfumeIds === 'string') {
+        try {
+          perfumeIds = JSON.parse(this.perfumeIds);
+        } catch {
+          perfumeIds = [];
+        }
+      } else if (Array.isArray(this.perfumeIds)) {
+        perfumeIds = this.perfumeIds;
+      }
+    }
 
-  @Column({ type: "timestamp", nullable: true })
-  shippedAt?: Date;
+    let perfumes: any[] = [];
+    if (this.perfumes) {
+      if (typeof this.perfumes === 'string') {
+        try {
+          perfumes = JSON.parse(this.perfumes);
+        } catch {
+          perfumes = [];
+        }
+      } else if (Array.isArray(this.perfumes)) {
+        perfumes = this.perfumes;
+      }
+    }
 
-  // Helper metode
-  isAvailable(): boolean {
-    return this.status === PackagingStatus.IN_STORAGE;
-  }
-
-  markAsShipped(trackingNumber?: string): void {
-    this.status = PackagingStatus.SHIPPED;
-    this.trackingNumber = trackingNumber;
-    this.shippedAt = new Date();
+    return {
+      id: this.id,
+      originalPackagingId: this.originalPackagingId,
+      warehouseId: this.warehouseId,
+      perfumeIds: perfumeIds,
+      perfumes: perfumes,
+      status: this.status,
+      sentToSalesAt: this.sentToSalesAt,
+      createdAt: this.createdAt
+    };
   }
 }

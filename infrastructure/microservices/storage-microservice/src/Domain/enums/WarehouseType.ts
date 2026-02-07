@@ -1,4 +1,4 @@
 export enum WarehouseType {
-  DISTRIBUTION = "DISTRIBUTION",  
-  WAREHOUSE = "WAREHOUSE"         
+  DISTRIBUTION_CENTER = "DISTRIBUTION_CENTER",  // Za menadžera prodaje
+  WAREHOUSE_CENTER = "WAREHOUSE_CENTER"         // Za prodavca
 }

@@ -1,8 +1,5 @@
 export enum PackagingStatus {
-  IN_TRANSIT = "IN_TRANSIT",    
-  IN_STORAGE = "IN_STORAGE", 
-  RESERVED = "RESERVED",         
-  SHIPPED = "SHIPPED",          
-  DELIVERED = "DELIVERED"        
+  STORED = "STORED",           // Uskladišteno
+  SENT_TO_SALES = "SENT_TO_SALES"  // Poslato prodaji
 }
 
