@@ -1,904 +1,215 @@
-import { Request, Response, Router } from "express";
-import { IProcessingService } from "../../Domain/services/IProcessingService";
-import { ILogerService } from "../../Domain/services/ILogerService";
-import { CreatePerfumeDTO } from "../../Domain/DTOs/CreatePerfumeDTO";
-import { ProcessPlantsDTO } from "../../Domain/DTOs/ProcessPlantsDTO";
-import { GetPerfumesDTO } from "../../Domain/DTOs/GetPerfumesDTO";
-import { PackagingRequestDTO } from "../../Domain/DTOs/PackagingRequestDTO";
-import { PackagingStatus } from "../../Domain/enums/PackagingStatus";
-import {
-  validateCreatePerfume,
-  validateProcessPlants,
-  validatePackagingRequest,
-  validateShipPackaging,
-  validatePerfumeSearchParams,
-  validateBatchSearchParams,
-  validatePackagingSearchParams,
-  validateIdParam,
-  validateRequestWithId,
-} from "../validators/ProcessingValidator";
+import { Router, Request, Response } from "express";
+import { Repository } from "typeorm";
+import { Perfume } from "../../Domain/models/Perfume";
+import { Packaging } from "../../Domain/models/Packaging";
+import { ProcessingService } from "../../Services/ProcessingService";
+import { IAuditClient } from "../../External/IAuditClient";
+import { IProductionClient } from "../../External/IProductionClient";
+import { IStorageClient } from "../../External/IStorageClient";
+import { Logger } from "../../Infrastructure/Logger";
+import { asyncHandler } from "../../Infrastructure/asyncHandler";
+import { ValidatorMiddleware } from "../../Middlewares/ValidatorMiddleware";
+import { StartProcessingDTO } from "../../Domain/DTOs/StartProcessingDTO";
+import { CreatePackagingDTO } from "../../Domain/DTOs/CreatePackagingDTO";
+import { SendPackagingDTO } from "../../Domain/DTOs/SendPackagingDTO";
+import { FilterPerfumesDTO } from "../../Domain/DTOs/FilterPerfumesDTO";
 
+/**
+ * ProcessingController
+ * HTTP endpoints za preradu parfema
+ */
 export class ProcessingController {
   private router: Router;
-  private processingService: IProcessingService;
-  private readonly logerService: ILogerService;
+  private readonly logger: Logger;
+  private readonly processingService: ProcessingService;
 
   constructor(
-    processingService: IProcessingService,
-    logerService: ILogerService
+    perfumeRepository: Repository<Perfume>,
+    packagingRepository: Repository<Packaging>,
+    auditClient: IAuditClient,
+    productionClient: IProductionClient,
+    storageClient: IStorageClient
   ) {
     this.router = Router();
-    this.processingService = processingService;
-    this.logerService = logerService;
+    this.logger = Logger.getInstance();
+    this.processingService = new ProcessingService(
+      perfumeRepository,
+      packagingRepository,
+      auditClient,
+      productionClient,
+      storageClient
+    );
     this.initializeRoutes();
   }
 
   private initializeRoutes(): void {
-    // Perfume management
-    this.router.post("/perfumes", this.createPerfume.bind(this));
-    this.router.get("/perfumes", this.getAllPerfumes.bind(this));
-    this.router.get("/perfumes/:id", this.getPerfumeById.bind(this));
-    this.router.get("/perfumes/type/:type", this.getPerfumeByType.bind(this));
-    this.router.put(
-      "/perfumes/:id/quantity",
-      this.updatePerfumeQuantity.bind(this)
-    );
-
-    // Processing operations
-    this.router.post("/process", this.processPlants.bind(this));
-    this.router.get("/batches", this.getAllBatches.bind(this));
-    this.router.get("/batches/:id", this.getBatchById.bind(this));
-    this.router.post("/batches/:id/cancel", this.cancelBatch.bind(this));
-
-    // Packaging operations
+    // Perfume routes
     this.router.post(
-      "/packaging/request",
-      this.requestPerfumesForPackaging.bind(this)
+      "/start",
+      ValidatorMiddleware(StartProcessingDTO),
+      asyncHandler(this.startProcessing.bind(this))
     );
-    this.router.get("/packaging", this.getAllPackaging.bind(this));
+
     this.router.get(
-      "/packaging/available",
-      this.getAvailablePackaging.bind(this)
-    );
-    this.router.get("/packaging/:id", this.getPackagingById.bind(this));
-    this.router.post(
-      "/packaging/:id/send-to-storage",
-      this.sendPackagingToStorage.bind(this)
-    );
-    this.router.post(
-      "/packaging/:id/ship",
-      this.deprecatedShipPackaging.bind(this)
+      "/perfumes",
+      asyncHandler(this.getAllPerfumes.bind(this))
     );
 
-    // Processing requests
-    this.router.post(
-      "/requests/process",
-      this.createProcessingRequest.bind(this)
-    );
-    this.router.get("/requests", this.getProcessingRequests.bind(this));
-    this.router.post(
-      "/requests/process-pending",
-      this.processPendingRequests.bind(this)
+    this.router.get(
+      "/perfumes/:id",
+      asyncHandler(this.getPerfumeById.bind(this))
     );
 
-    // Inventory and system status
-    this.router.get("/inventory", this.getPerfumeInventory.bind(this));
-    this.router.get("/status", this.getSystemStatus.bind(this));
-    this.router.get("/plants-needed", this.calculatePlantsNeeded.bind(this));
+    // Packaging routes
+    this.router.post(
+      "/packaging",
+      ValidatorMiddleware(CreatePackagingDTO),
+      asyncHandler(this.createPackaging.bind(this))
+    );
 
-    // Processing logs
-    this.router.get("/logs", this.getProcessingLogs.bind(this));
+    this.router.get(
+      "/packaging",
+      asyncHandler(this.getAllPackagings.bind(this))
+    );
+
+    this.router.post(
+      "/packaging/send",
+      ValidatorMiddleware(SendPackagingDTO),
+      asyncHandler(this.sendPackaging.bind(this))
+    );
+
+    this.router.get(
+      "/packaging/:id",
+      asyncHandler(this.getPackagingById.bind(this))
+    );
   }
 
-  private async createPerfume(req: Request, res: Response): Promise<void> {
-    try {
-      this.logerService.log("Create perfume request received");
+  /**
+   * POST /api/v1/processing/start
+   */
+  private async startProcessing(req: Request, res: Response): Promise<void> {
+    this.logger.info("ProcessingController", `🧪 POST /api/v1/processing/start`);
 
-      const validation = validateCreatePerfume(req.body);
-      if (!validation.valid) {
-        res.status(400).json({
-          success: false,
-          message: "Validation failed",
-          errors: validation.errors,
-        });
-        return;
-      }
+    const dto = req.body as StartProcessingDTO;
+    const perfumes = await this.processingService.startProcessing(dto);
 
-      const data: CreatePerfumeDTO = req.body;
-      const perfume = await this.processingService.createPerfume(data);
-
-      res.status(201).json({
-        success: true,
-        message: "Perfume created successfully",
-        data: perfume,
-      });
-    } catch (error: any) {
-      this.logerService.log(`Error creating perfume: ${error.message}`);
-      res.status(400).json({
-        success: false,
-        message: error.message || "Failed to create perfume",
-      });
-    }
+    res.status(201).json({
+      success: true,
+      code: "PROCESSING_STARTED",
+      data: perfumes.map(p => p.toJSON()),
+      count: perfumes.length,
+      timestamp: new Date().toISOString()
+    });
   }
 
+  /**
+   * GET /api/v1/processing/perfumes
+   */
   private async getAllPerfumes(req: Request, res: Response): Promise<void> {
-    try {
-      this.logerService.log("Get all perfumes request received");
+    this.logger.info("ProcessingController", `📋 GET /api/v1/processing/perfumes`);
 
-      const validation = validatePerfumeSearchParams(req.query);
-      if (!validation.valid) {
-        res.status(400).json({
-          success: false,
-          message: "Validation failed",
-          errors: validation.errors,
-        });
-        return;
-      }
+    const filters: FilterPerfumesDTO = {
+      type: req.query.type as any,
+      status: req.query.status as any
+    };
 
-      const filters: GetPerfumesDTO = {
-        type: validation.validatedParams.type,
-        minQuantity: validation.validatedParams.minQuantity,
-        bottleSize: validation.validatedParams.bottleSize,
-      };
+    const perfumes = await this.processingService.getAllPerfumes(filters);
 
-      const perfumes = await this.processingService.getAllPerfumes(filters);
-
-      res.status(200).json({
-        success: true,
-        data: perfumes,
-        count: perfumes.length,
-      });
-    } catch (error: any) {
-      this.logerService.log(`Error getting all perfumes: ${error.message}`);
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to fetch perfumes",
-      });
-    }
+    res.status(200).json({
+      success: true,
+      code: "PERFUMES_RETRIEVED",
+      data: perfumes.map(p => p.toJSON()),
+      count: perfumes.length,
+      timestamp: new Date().toISOString()
+    });
   }
 
+  /**
+   * GET /api/v1/processing/perfumes/:id
+   */
   private async getPerfumeById(req: Request, res: Response): Promise<void> {
-    try {
-      const id = req.params.id;
-      this.logerService.log(`Get perfume by ID request received: ${id}`);
+    const { id } = req.params;
+    this.logger.info("ProcessingController", `📄 GET /api/v1/processing/perfumes/${id}`);
 
-      const validation = validateIdParam(id);
-      if (!validation.valid) {
-        res.status(400).json({
-          success: false,
-          message: "Validation failed",
-          errors: validation.errors,
-        });
-        return;
-      }
+    const perfume = await this.processingService.getPerfumeById(id);
 
-      const perfume = await this.processingService.getPerfumeById(
-        validation.parsedId!
-      );
-
-      if (perfume) {
-        res.status(200).json({
-          success: true,
-          data: perfume,
-        });
-      } else {
-        res.status(404).json({
-          success: false,
-          message: "Perfume not found",
-        });
-      }
-    } catch (error: any) {
-      this.logerService.log(`Error getting perfume by ID: ${error.message}`);
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to fetch perfume",
-      });
-    }
+    res.status(200).json({
+      success: true,
+      code: "PERFUME_RETRIEVED",
+      data: perfume.toJSON(),
+      timestamp: new Date().toISOString()
+    });
   }
 
-  private async getPerfumeByType(req: Request, res: Response): Promise<void> {
-    try {
-      const type = req.params.type;
-      this.logerService.log(`Get perfume by type request received: ${type}`);
+  /**
+   * POST /api/v1/processing/packaging
+   */
+  private async createPackaging(req: Request, res: Response): Promise<void> {
+    this.logger.info("ProcessingController", `📦 POST /api/v1/processing/packaging`);
 
-      const perfume = await this.processingService.getPerfumeByType(type);
+    const dto = req.body as CreatePackagingDTO;
+    const packaging = await this.processingService.createPackaging(dto);
 
-      if (perfume) {
-        res.status(200).json({
-          success: true,
-          data: perfume,
-        });
-      } else {
-        res.status(404).json({
-          success: false,
-          message: "Perfume type not found",
-        });
-      }
-    } catch (error: any) {
-      this.logerService.log(`Error getting perfume by type: ${error.message}`);
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to fetch perfume by type",
-      });
-    }
+    res.status(201).json({
+      success: true,
+      code: "PACKAGING_CREATED",
+      data: packaging.toJSON(),
+      timestamp: new Date().toISOString()
+    });
   }
 
-  private async updatePerfumeQuantity(
-    req: Request,
-    res: Response
-  ): Promise<void> {
-    try {
-      const id = req.params.id;
-      const { quantity } = req.body;
+  /**
+   * GET /api/v1/processing/packaging
+   */
+  private async getAllPackagings(req: Request, res: Response): Promise<void> {
+    this.logger.info("ProcessingController", `📋 GET /api/v1/processing/packaging`);
 
-      this.logerService.log(
-        `Update perfume quantity request received for perfume: ${id}`
-      );
+    const packagings = await this.processingService.getAllPackagings();
 
-      const validation = validateRequestWithId(id, { quantity }, (data) => {
-        const errors: string[] = [];
-        if (!data.quantity || data.quantity < 0) {
-          errors.push("Quantity must be a positive number");
-        }
-        if (data.quantity > 100000) {
-          errors.push("Quantity cannot exceed 100000");
-        }
-        return {
-          valid: errors.length === 0,
-          errors: errors.length > 0 ? errors : undefined,
-        };
-      });
-
-      if (!validation.valid) {
-        res.status(400).json({
-          success: false,
-          message: "Validation failed",
-          errors: validation.errors,
-        });
-        return;
-      }
-
-      const perfume = await this.processingService.updatePerfumeQuantity(
-        validation.parsedId!,
-        quantity
-      );
-
-      if (perfume) {
-        res.status(200).json({
-          success: true,
-          message: "Perfume quantity updated successfully",
-          data: perfume,
-        });
-      } else {
-        res.status(404).json({
-          success: false,
-          message: "Perfume not found",
-        });
-      }
-    } catch (error: any) {
-      this.logerService.log(
-        `Error updating perfume quantity: ${error.message}`
-      );
-      res.status(400).json({
-        success: false,
-        message: error.message || "Failed to update perfume quantity",
-      });
-    }
+    res.status(200).json({
+      success: true,
+      code: "PACKAGINGS_RETRIEVED",
+      data: packagings.map(p => p.toJSON()),
+      count: packagings.length,
+      timestamp: new Date().toISOString()
+    });
   }
 
-  private async processPlants(req: Request, res: Response): Promise<void> {
-    try {
-      this.logerService.log("Process plants request received");
+  /**
+   * POST /api/v1/processing/packaging/send
+   */
+  private async sendPackaging(req: Request, res: Response): Promise<void> {
+    this.logger.info("ProcessingController", `📤 POST /api/v1/processing/packaging/send`);
 
-      const validation = validateProcessPlants(req.body);
-      if (!validation.valid) {
-        res.status(400).json({
-          success: false,
-          message: "Validation failed",
-          errors: validation.errors,
-        });
-        return;
-      }
+    const { packagingId } = req.body as SendPackagingDTO;
+    const packaging = await this.processingService.sendPackaging(packagingId);
 
-      const data: ProcessPlantsDTO = req.body;
-      const batch = await this.processingService.processPlants(data);
-
-      res.status(201).json({
-        success: true,
-        message: "Processing started successfully",
-        data: batch,
-        estimatedCompletion: new Date(Date.now() + batch.bottleCount * 2000),
-      });
-    } catch (error: any) {
-      this.logerService.log(`Error processing plants: ${error.message}`);
-      res.status(400).json({
-        success: false,
-        message: error.message || "Failed to process plants",
-      });
-    }
+    res.status(200).json({
+      success: true,
+      code: "PACKAGING_SENT",
+      data: packaging.toJSON(),
+      timestamp: new Date().toISOString()
+    });
   }
 
-  private async getAllBatches(req: Request, res: Response): Promise<void> {
-    try {
-      this.logerService.log("Get all batches request received");
-
-      const validation = validateBatchSearchParams(req.query);
-      if (!validation.valid) {
-        res.status(400).json({
-          success: false,
-          message: "Validation failed",
-          errors: validation.errors,
-        });
-        return;
-      }
-
-      const filters = {
-        status: validation.validatedParams.status,
-        perfumeType: validation.validatedParams.perfumeType,
-        source: validation.validatedParams.source,
-      };
-
-      const batches = await this.processingService.getAllProcessingBatches(
-        filters
-      );
-
-      res.status(200).json({
-        success: true,
-        data: batches,
-        count: batches.length,
-      });
-    } catch (error: any) {
-      this.logerService.log(`Error getting all batches: ${error.message}`);
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to fetch processing batches",
-      });
-    }
-  }
-
-  private async getBatchById(req: Request, res: Response): Promise<void> {
-    try {
-      const id = req.params.id;
-      this.logerService.log(`Get batch by ID request received: ${id}`);
-
-      const validation = validateIdParam(id);
-      if (!validation.valid) {
-        res.status(400).json({
-          success: false,
-          message: "Validation failed",
-          errors: validation.errors,
-        });
-        return;
-      }
-
-      const batch = await this.processingService.getProcessingBatch(
-        validation.parsedId!
-      );
-
-      if (batch) {
-        res.status(200).json({
-          success: true,
-          data: batch,
-        });
-      } else {
-        res.status(404).json({
-          success: false,
-          message: "Processing batch not found",
-        });
-      }
-    } catch (error: any) {
-      this.logerService.log(`Error getting batch by ID: ${error.message}`);
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to fetch processing batch",
-      });
-    }
-  }
-
-  private async cancelBatch(req: Request, res: Response): Promise<void> {
-    try {
-      const id = req.params.id;
-      const { reason } = req.body;
-
-      this.logerService.log(`Cancel batch request received for batch: ${id}`);
-
-      const validation = validateIdParam(id);
-      if (!validation.valid) {
-        res.status(400).json({
-          success: false,
-          message: "Validation failed",
-          errors: validation.errors,
-        });
-        return;
-      }
-
-      const success = await this.processingService.cancelProcessingBatch(
-        validation.parsedId!,
-        reason
-      );
-
-      if (success) {
-        res.status(200).json({
-          success: true,
-          message: reason
-            ? `Batch cancelled: ${reason}`
-            : "Batch cancelled successfully",
-        });
-      } else {
-        res.status(404).json({
-          success: false,
-          message: "Batch not found or already completed",
-        });
-      }
-    } catch (error: any) {
-      this.logerService.log(`Error cancelling batch: ${error.message}`);
-      res.status(400).json({
-        success: false,
-        message: error.message || "Failed to cancel batch",
-      });
-    }
-  }
-
-  private async requestPerfumesForPackaging(
-    req: Request,
-    res: Response
-  ): Promise<void> {
-    try {
-      this.logerService.log("Packaging request received");
-
-      const validation = validatePackagingRequest(req.body);
-      if (!validation.valid) {
-        res.status(400).json({
-          success: false,
-          message: "Validation failed",
-          errors: validation.errors,
-        });
-        return;
-      }
-
-      const data: PackagingRequestDTO = req.body;
-      const packaging =
-        await this.processingService.requestPerfumesForPackaging(data);
-
-      if (packaging) {
-        res.status(201).json({
-          success: true,
-          message: "Perfumes packaged and sent to storage",
-          data: packaging,
-          sentToStorage: packaging.status === PackagingStatus.SENT_TO_STORAGE,
-        });
-      } else {
-        res.status(400).json({
-          success: false,
-          message: "Failed to process packaging request",
-        });
-      }
-    } catch (error: any) {
-      this.logerService.log(
-        `Error processing packaging request: ${error.message}`
-      );
-      res.status(400).json({
-        success: false,
-        message: error.message || "Failed to process packaging request",
-      });
-    }
-  }
-
-  private async getAllPackaging(req: Request, res: Response): Promise<void> {
-    try {
-      this.logerService.log("Get all packaging request received");
-
-      const validation = validatePackagingSearchParams(req.query);
-      if (!validation.valid) {
-        res.status(400).json({
-          success: false,
-          message: "Validation failed",
-          errors: validation.errors,
-        });
-        return;
-      }
-
-      const allPackaging = await this.processingService.getAllPackaging();
-
-      let filteredPackaging = allPackaging;
-      if (validation.validatedParams?.status) {
-        filteredPackaging = filteredPackaging.filter(
-          (p) => p.status === validation.validatedParams!.status
-        );
-      }
-      if (validation.validatedParams?.perfumeType) {
-        filteredPackaging = filteredPackaging.filter(
-          (p) => p.perfume?.type === validation.validatedParams!.perfumeType
-        );
-      }
-      if (validation.validatedParams?.warehouseLocation) {
-        filteredPackaging = filteredPackaging.filter((p) =>
-          p.warehouseLocation?.includes(
-            validation.validatedParams!.warehouseLocation!
-          )
-        );
-      }
-
-      res.status(200).json({
-        success: true,
-        data: filteredPackaging,
-        count: filteredPackaging.length,
-      });
-    } catch (error: any) {
-      this.logerService.log(`Error getting all packaging: ${error.message}`);
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to fetch packaging",
-      });
-    }
-  }
-
-  private async getAvailablePackaging(
-    req: Request,
-    res: Response
-  ): Promise<void> {
-    try {
-      this.logerService.log("Get available packaging request received");
-
-      const packaging = await this.processingService.getAvailablePackaging();
-
-      res.status(200).json({
-        success: true,
-        data: packaging,
-        count: packaging.length,
-      });
-    } catch (error: any) {
-      this.logerService.log(
-        `Error getting available packaging: ${error.message}`
-      );
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to fetch available packaging",
-      });
-    }
-  }
-
+  /**
+   * GET /api/v1/processing/packaging/:id
+   */
   private async getPackagingById(req: Request, res: Response): Promise<void> {
-    try {
-      const id = req.params.id;
-      this.logerService.log(`Get packaging by ID request received: ${id}`);
+    const { id } = req.params;
+    this.logger.info("ProcessingController", `📄 GET /api/v1/processing/packaging/${id}`);
 
-      const validation = validateIdParam(id);
-      if (!validation.valid) {
-        res.status(400).json({
-          success: false,
-          message: "Validation failed",
-          errors: validation.errors,
-        });
-        return;
-      }
+    const packaging = await this.processingService.getPackagingById(id);
 
-      const packaging = await this.processingService.getPackagingById(
-        validation.parsedId!
-      );
-
-      if (packaging) {
-        res.status(200).json({
-          success: true,
-          data: packaging,
-        });
-      } else {
-        res.status(404).json({
-          success: false,
-          message: "Packaging not found",
-        });
-      }
-    } catch (error: any) {
-      this.logerService.log(`Error getting packaging by ID: ${error.message}`);
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to fetch packaging",
-      });
-    }
+    res.status(200).json({
+      success: true,
+      code: "PACKAGING_RETRIEVED",
+      data: packaging.toJSON(),
+      timestamp: new Date().toISOString()
+    });
   }
 
-  private async sendPackagingToStorage(
-    req: Request,
-    res: Response
-  ): Promise<void> {
-    try {
-      const id = req.params.id;
-      const { warehouseId } = req.body;
-
-      this.logerService.log(`Send packaging to storage request: ${id}`);
-
-      const validation = validateIdParam(id);
-      if (!validation.valid) {
-        res.status(400).json({
-          success: false,
-          message: "Validation failed",
-          errors: validation.errors,
-        });
-        return;
-      }
-
-      const success = await this.processingService.sendPackagingToStorage(
-        validation.parsedId!,
-        warehouseId
-      );
-
-      if (success) {
-        res.status(200).json({
-          success: true,
-          message: "Packaging sent to Storage successfully",
-        });
-      } else {
-        res.status(400).json({
-          success: false,
-          message: "Failed to send packaging to Storage",
-        });
-      }
-    } catch (error: any) {
-      this.logerService.log(
-        `Error sending packaging to storage: ${error.message}`
-      );
-      res.status(400).json({
-        success: false,
-        message: error.message || "Failed to send packaging to storage",
-      });
-    }
-  }
-
-  private async deprecatedShipPackaging(
-    req: Request,
-    res: Response
-  ): Promise<void> {
-    try {
-      const id = req.params.id;
-
-      this.logerService.log(`DEPRECATED: Ship packaging request: ${id}`);
-
-      res.status(410).json({
-        success: false,
-        message: "This endpoint is deprecated (410 Gone)",
-        instructions: "Use POST /api/v1/packaging/:id/send-to-storage instead",
-        details: {
-          reason: "Processing service no longer handles shipping to warehouses",
-          new_flow: "Processing → Storage → Sales",
-          recommended_action: "Use send-to-storage endpoint",
-        },
-      });
-    } catch (error: any) {
-      this.logerService.log(`Error in deprecated endpoint: ${error.message}`);
-      res.status(400).json({
-        success: false,
-        message: error.message,
-      });
-    }
-  }
-
-  private async createProcessingRequest(
-    req: Request,
-    res: Response
-  ): Promise<void> {
-    try {
-      this.logerService.log("Create processing request received");
-
-      const validation = validateProcessPlants(req.body);
-      if (!validation.valid) {
-        res.status(400).json({
-          success: false,
-          message: "Validation failed",
-          errors: validation.errors,
-        });
-        return;
-      }
-
-      const data: ProcessPlantsDTO = req.body;
-      const request = await this.processingService.createProcessingRequest(
-        data
-      );
-
-      res.status(201).json({
-        success: true,
-        message: "Processing request created successfully",
-        data: request,
-      });
-    } catch (error: any) {
-      this.logerService.log(
-        `Error creating processing request: ${error.message}`
-      );
-      res.status(400).json({
-        success: false,
-        message: error.message || "Failed to create processing request",
-      });
-    }
-  }
-
-  private async getProcessingRequests(
-    req: Request,
-    res: Response
-  ): Promise<void> {
-    try {
-      this.logerService.log("Get processing requests request received");
-
-      const { status, source } = req.query;
-
-      const filters: any = {};
-      if (status) filters.status = status as string;
-      if (source) filters.source = source as string;
-
-      const requests = await this.processingService.getProcessingRequests(
-        filters
-      );
-
-      res.status(200).json({
-        success: true,
-        data: requests,
-        count: requests.length,
-      });
-    } catch (error: any) {
-      this.logerService.log(
-        `Error getting processing requests: ${error.message}`
-      );
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to fetch processing requests",
-      });
-    }
-  }
-
-  private async processPendingRequests(
-    req: Request,
-    res: Response
-  ): Promise<void> {
-    try {
-      this.logerService.log("Process pending requests request received");
-
-      const processedCount =
-        await this.processingService.processPendingRequests();
-
-      res.status(200).json({
-        success: true,
-        message: `Successfully processed ${processedCount} pending requests`,
-        processedCount,
-      });
-    } catch (error: any) {
-      this.logerService.log(
-        `Error processing pending requests: ${error.message}`
-      );
-      res.status(400).json({
-        success: false,
-        message: error.message || "Failed to process pending requests",
-      });
-    }
-  }
-
-  private async getPerfumeInventory(
-    req: Request,
-    res: Response
-  ): Promise<void> {
-    try {
-      const type = req.query.type as string;
-      this.logerService.log(
-        `Get perfume inventory request received${
-          type ? ` for type: ${type}` : ""
-        }`
-      );
-
-      const inventory = await this.processingService.getPerfumeInventory(type);
-
-      res.status(200).json({
-        success: true,
-        data: inventory,
-      });
-    } catch (error: any) {
-      this.logerService.log(
-        `Error getting perfume inventory: ${error.message}`
-      );
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to fetch perfume inventory",
-      });
-    }
-  }
-
-  private async getSystemStatus(req: Request, res: Response): Promise<void> {
-    try {
-      this.logerService.log("Get system status request received");
-
-      const status = await this.processingService.getSystemStatus();
-
-      res.status(200).json({
-        success: true,
-        data: status,
-      });
-    } catch (error: any) {
-      this.logerService.log(`Error getting system status: ${error.message}`);
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to fetch system status",
-      });
-    }
-  }
-
-  private async calculatePlantsNeeded(
-    req: Request,
-    res: Response
-  ): Promise<void> {
-    try {
-      const { bottleCount, bottleSize } = req.query;
-
-      this.logerService.log("Calculate plants needed request received");
-
-      if (!bottleCount || !bottleSize) {
-        res.status(400).json({
-          success: false,
-          message: "bottleCount and bottleSize are required",
-        });
-        return;
-      }
-
-      const count = parseInt(bottleCount as string);
-      const size = parseInt(bottleSize as string);
-
-      if (isNaN(count) || count <= 0) {
-        res.status(400).json({
-          success: false,
-          message: "bottleCount must be a positive number",
-        });
-        return;
-      }
-
-      if (isNaN(size) || (size !== 150 && size !== 250)) {
-        res.status(400).json({
-          success: false,
-          message: "bottleSize must be either 150 or 250",
-        });
-        return;
-      }
-
-      const plantsNeeded = this.processingService.calculatePlantsNeeded(
-        count,
-        size
-      );
-      const totalMl = count * size;
-
-      res.status(200).json({
-        success: true,
-        data: {
-          bottleCount: count,
-          bottleSize: size,
-          totalMl,
-          plantsNeeded,
-          plantsPerBottle: plantsNeeded / count,
-        },
-      });
-    } catch (error: any) {
-      this.logerService.log(
-        `Error calculating plants needed: ${error.message}`
-      );
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to calculate plants needed",
-      });
-    }
-  }
-
-  private async getProcessingLogs(req: Request, res: Response): Promise<void> {
-    try {
-      this.logerService.log("Get processing logs request received");
-
-      res.status(200).json({
-        success: true,
-        message: "Logs endpoint - implementation pending",
-        data: [],
-      });
-    } catch (error: any) {
-      this.logerService.log(`Error getting processing logs: ${error.message}`);
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to fetch processing logs",
-      });
-    }
-  }
-
-  public getRouter(): Router {
+  getRouter(): Router {
     return this.router;
   }
 }

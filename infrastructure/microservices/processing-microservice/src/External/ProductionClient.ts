@@ -1,220 +1,102 @@
-import axios from "axios";
+import axios, { AxiosInstance } from "axios";
+import { IProductionClient } from "./IProductionClient";
+import { PlantDTO } from "../Domain/DTOs/PlantDTO";
+import { Logger } from "../Infrastructure/Logger";
+import { ExternalServiceException } from "../Domain/exceptions/ExternalServiceException";
 
-export class ProductionClient {
-  private baseUrl: string;
+/**
+ * ProductionClient
+ * Klijent za komunikaciju sa Production mikroservisom
+ */
+export class ProductionClient implements IProductionClient {
+  private readonly logger: Logger;
+  private readonly axiosInstance: AxiosInstance;
 
-  constructor(
-    baseUrl: string = process.env.PRODUCTION_SERVICE_URL || "http://localhost:3003"
-  ) {
-    this.baseUrl = baseUrl;
+  constructor() {
+    this.logger = Logger.getInstance();
+    const productionServiceUrl = process.env.PRODUCTION_SERVICE_URL || "http://localhost:5004";
+    this.axiosInstance = axios.create({
+      baseURL: productionServiceUrl,
+      timeout: 10000,
+      headers: { "X-Service-Name": "PROCESSING_SERVICE" }
+    });
   }
 
   /**
-   * GET /api/v1/plants/for-processing
-   * Get plants ready for processing
+   * Uberi biljke iz Production servisa
    */
-  async getPlantsForProcessing(): Promise<{
-    success: boolean;
-    data: Array<{
-      id: number;
-      plantType: string;
-      oilIntensity: number;
-      quantity: number;
-      readyForHarvest: boolean;
-    }>
-  }> {
+  async harvestPlants(commonName: string, count: number): Promise<PlantDTO[]> {
     try {
-      const response = await axios.get(
-        `${this.baseUrl}/api/v1/plants/for-processing`,
-        { timeout: 3000 }
-      );
-      return response.data as any;
-    } catch (error: any) {
-      console.error(
-        "\x1b[31m[ProductionClient]\x1b[0m Failed to get plants for processing:",
-        error.message
-      );
-      return {
-        success: false,
-        data: []
-      };
-    }
-  }
+      this.logger.debug("ProductionClient", `Harvesting ${count} plants of ${commonName}`);
 
-  /**
-   * POST /api/v1/plants/request-for-processing
-   * Request new plant for processing balance
-   */
-  async requestNewPlantForProcessing(
-    processedPlantId: number,
-    processedIntensity: number
-  ): Promise<{
-    success: boolean;
-    message: string;
-    data?: {
-      id: number;
-      plantType: string;
-      oilIntensity: number;
-    }
-  }> {
-    try {
-      const response = await axios.post(
-        `${this.baseUrl}/api/v1/plants/request-for-processing`,
-        { processedPlantId, processedIntensity },
-        { timeout: 5000 }
-      );
-      return response.data as any;
-    } catch (error: any) {
-      console.error(
-        "\x1b[31m[ProductionClient]\x1b[0m Failed to request new plant:",
-        error.message
-      );
-      return {
-        success: false,
-        message: "Failed to request new plant from production service"
-      };
+      const response = await this.axiosInstance.post("/api/v1/production/plants/harvest", {
+        commonName,
+        count
+      });
+
+      return response.data.data;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error("ProductionClient", `Failed to harvest plants: ${message}`);
+      throw new ExternalServiceException(`Production service error: ${message}`);
     }
   }
 
   /**
-   * POST /api/v1/plants/:id/harvest
-   * Harvest plants for processing
+   * Kreiraj novu biljku
    */
-  async harvestPlantsForProcessing(
-    plantId: number,
-    quantity: number,
-    userId: string
-  ): Promise<{
-    success: boolean;
-    message: string;
-  }> {
+  async createPlant(commonName: string, latinName: string, originCountry: string): Promise<PlantDTO> {
     try {
-      const response = await axios.post(
-        `${this.baseUrl}/api/v1/plants/${plantId}/harvest`,
-        { quantity, forProcessing: true, userId },
-        { timeout: 5000 }
-      );
-      return response.data as any;
-    } catch (error: any) {
-      console.error(
-        `\x1b[31m[ProductionClient]\x1b[0m Failed to harvest plants ${plantId}:`,
-        error.message
-      );
-      return {
-        success: false,
-        message: `Failed to harvest plants: ${error.message}`
-      };
+      this.logger.debug("ProductionClient", `Creating plant: ${commonName}`);
+
+      const response = await this.axiosInstance.post("/api/v1/production/plants", {
+        commonName,
+        latinName,
+        originCountry
+      });
+
+      return response.data.data;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error("ProductionClient", `Failed to create plant: ${message}`);
+      throw new ExternalServiceException(`Production service error: ${message}`);
     }
   }
 
   /**
-   * GET /api/v1/plants/:id
-   * Get plant by ID
+   * Promeni jačinu ulja
    */
-  async getPlantById(plantId: number): Promise<{
-    success: boolean;
-    data?: {
-      id: number;
-      plantType: string;
-      oilIntensity: number;
-      quantity: number;
-      readyForHarvest: boolean;
-    }
-  }> {
+  async adjustOilStrength(plantId: string, percentage: number): Promise<PlantDTO> {
     try {
-      const response = await axios.get(
-        `${this.baseUrl}/api/v1/plants/${plantId}`,
-        { timeout: 3000 }
+      this.logger.debug("ProductionClient", `Adjusting oil strength for plant ${plantId}`);
+
+      const response = await this.axiosInstance.patch(
+        `/api/v1/production/plants/${plantId}/oil-strength`,
+        { percentage }
       );
-      return response.data as any;
-    } catch (error: any) {
-      console.error(
-        `\x1b[31m[ProductionClient]\x1b[0m Failed to get plant ${plantId}:`,
-        error.message
-      );
-      return {
-        success: false
-      };
+
+      return response.data.data;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error("ProductionClient", `Failed to adjust oil strength: ${message}`);
+      throw new ExternalServiceException(`Production service error: ${message}`);
     }
   }
 
   /**
-   * PUT /api/v1/plants/:id/oil-intensity
-   * Change oil intensity for a plant
+   * Označi biljke kao obrađene
    */
-  async changeOilIntensity(
-    plantId: number,
-    percentage: number,
-    userId: string
-  ): Promise<{
-    success: boolean;
-    message: string;
-    data?: {
-      id: number;
-      oilIntensity: number;
-      thresholdExceeded: boolean;
-    }
-  }> {
+  async markAsProcessed(plantIds: string[]): Promise<void> {
     try {
-      const response = await axios.put(
-        `${this.baseUrl}/api/v1/plants/${plantId}/oil-intensity`,
-        { percentage, userId },
-        { timeout: 5000 }
-      );
-      return response.data as any;
-    } catch (error: any) {
-      console.error(
-        `\x1b[31m[ProductionClient]\x1b[0m Failed to change oil intensity for plant ${plantId}:`,
-        error.message
-      );
-      return {
-        success: false,
-        message: `Failed to change oil intensity: ${error.message}`
-      };
-    }
-  }
+      this.logger.debug("ProductionClient", `Marking ${plantIds.length} plants as processed`);
 
-  /**
-   * GET /api/v1/plants/available
-   * Get available plants for harvest
-   */
-  async getAvailablePlants(): Promise<{
-    success: boolean;
-    data: Array<{
-      id: number;
-      plantType: string;
-      oilIntensity: number;
-      quantity: number;
-      readyForHarvest: boolean;
-    }>
-  }> {
-    try {
-      const response = await axios.get(
-        `${this.baseUrl}/api/v1/plants/available`,
-        { timeout: 3000 }
-      );
-      return response.data as any;
-    } catch (error: any) {
-      console.error(
-        "\x1b[31m[ProductionClient]\x1b[0m Failed to get available plants:",
-        error.message
-      );
-      return {
-        success: false,
-        data: []
-      };
-    }
-  }
-
-  /**
-   * Health check
-   */
-  async healthCheck(): Promise<boolean> {
-    try {
-      const response = await axios.get(`${this.baseUrl}/health`, { timeout: 2000 });
-      return response.status === 200;
-    } catch (error) {
-      return false;
+      await this.axiosInstance.patch("/api/v1/production/plants/mark-processed", {
+        plantIds
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error("ProductionClient", `Failed to mark plants as processed: ${message}`);
+      throw new ExternalServiceException(`Production service error: ${message}`);
     }
   }
 }

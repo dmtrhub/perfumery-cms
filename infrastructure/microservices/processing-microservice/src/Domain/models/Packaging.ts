@@ -1,93 +1,56 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn } from "typeorm";
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  Index,
+  OneToMany
+} from "typeorm";
 import { PackagingStatus } from "../enums/PackagingStatus";
 import { Perfume } from "./Perfume";
 
-@Entity("packaging")
+/**
+ * Packaging Entity
+ * Predstavlja ambalažu za slanje parfema
+ */
+@Entity("packagings")
+@Index(["status"])
 export class Packaging {
-  @PrimaryGeneratedColumn()
-  id!: number;
+  @PrimaryGeneratedColumn("uuid")
+  id!: string;
 
-  @ManyToOne(() => Perfume, { onDelete: "CASCADE" })
-  @JoinColumn({ name: "perfume_id" })
-  perfume!: Perfume;
+  @Column({ type: "varchar", length: 100 })
+  name!: string;
 
-  @Column({ name: "perfume_id" })
-  perfumeId!: number;
+  @Column({ type: "varchar", length: 255 })
+  senderAddress!: string;
 
-  @Column({ type: "int" })
-  quantity!: number;
+  @Column({ type: "uuid" })
+  warehouseId!: string;
 
-  @Column({ 
-    type: "enum",
-    enum: PackagingStatus,
-    default: PackagingStatus.AVAILABLE
-  })
+  @Column({ type: "enum", enum: PackagingStatus, default: PackagingStatus.PACKED })
   status!: PackagingStatus;
 
-  @Column({ type: "varchar", length: 100, nullable: true, name: "warehouse_location" })
-  warehouseLocation?: string;
+  @Column({ type: "datetime", nullable: true })
+  sentAt?: Date;
 
-   @Column({ type: "int", nullable: true })
-  warehouseId?: number;
+  @OneToMany(() => Perfume, perfume => perfume.packaging)
+  perfumes!: Perfume[];
 
-  @Column({ type: "varchar", length: 255, nullable: true, name: "tracking_number" })
-  trackingNumber?: string;
+  @CreateDateColumn()
+  createdAt!: Date;
 
-  @Column({ type: "json", nullable: true })
-  details?: Record<string, any>;
-
-  @CreateDateColumn({ name: "packaged_at" })
-  packagedAt!: Date;
-
-  @Column({ type: "timestamp", nullable: true, name: "shipped_at" })
-  shippedAt?: Date;
-
-  @Column({ type: "timestamp", nullable: true, name: "received_at" })
-  receivedAt?: Date;
-
-  @Column({ type: "timestamp", nullable: true })
-  sentToStorageAt?: Date;
-
-  // Mark as shipped to warehouse
-  markAsShipped(warehouseLocation: string, trackingNumber?: string): void {
-    this.status = PackagingStatus.SHIPPED;
-    this.warehouseLocation = warehouseLocation;
-    this.trackingNumber = trackingNumber;
-    this.shippedAt = new Date();
-  }
-
-  // Mark as delivered to warehouse
-  markAsDelivered(): void {
-    this.status = PackagingStatus.DELIVERED;
-    this.receivedAt = new Date();
-  }
-
-  // Check if available for shipping
-  isAvailable(): boolean {
-    return this.status === PackagingStatus.AVAILABLE;
-  }
-
-  // Check if already shipped
-  isShipped(): boolean {
-    return this.status === PackagingStatus.SHIPPED;
-  }
-
-  // Get total volume in ml (requires perfume relation)
-  getTotalVolume(): number | null {
-    if (!this.perfume) return null;
-    return this.quantity * this.perfume.bottleSize;
-  }
-
-  getPerfumeIds(): number[] {
-    return [this.perfumeId];
-  }
-
-  markAsSentToStorage(): void {
-    this.status = PackagingStatus.SENT_TO_STORAGE;
-    this.sentToStorageAt = new Date();
-  }
-
-  isSentToStorage(): boolean {
-    return this.status === PackagingStatus.SENT_TO_STORAGE;
+  toJSON() {
+    return {
+      id: this.id,
+      name: this.name,
+      senderAddress: this.senderAddress,
+      warehouseId: this.warehouseId,
+      status: this.status,
+      sentAt: this.sentAt,
+      perfumeIds: this.perfumes?.map(p => p.id) || [],
+      perfumes: this.perfumes?.map(p => p.toJSON()) || [],
+      createdAt: this.createdAt
+    };
   }
 }

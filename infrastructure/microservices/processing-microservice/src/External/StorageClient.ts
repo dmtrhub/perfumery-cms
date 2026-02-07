@@ -1,82 +1,38 @@
-import axios from "axios";
+import axios, { AxiosInstance } from "axios";
+import { IStorageClient } from "./IStorageClient";
+import { Logger } from "../Infrastructure/Logger";
+import { ExternalServiceException } from "../Domain/exceptions/ExternalServiceException";
 
-export interface ReceivePackagingRequest {
-  processingPackagingId: number;
-  perfumeIds: number[];
-  destinationWarehouseId: number;
-  metadata?: any;
-}
+/**
+ * StorageClient
+ * Klijent za komunikaciju sa Storage mikroservisom
+ */
+export class StorageClient implements IStorageClient {
+  private readonly logger: Logger;
+  private readonly axiosInstance: AxiosInstance;
 
-export interface StorageResponse {
-  success: boolean;
-  message: string;
-  data?: {
-    storagePackagingId: number;
-    warehouseId: number;
-    status: string;
-  };
-}
-
-export class StorageClient {
-  private baseUrl: string;
-
-  constructor(baseUrl?: string) {
-    this.baseUrl = baseUrl || process.env.STORAGE_SERVICE_URL || "http://localhost:5006";
+  constructor() {
+    this.logger = Logger.getInstance();
+    const storageServiceUrl = process.env.STORAGE_SERVICE_URL || "http://localhost:5006";
+    this.axiosInstance = axios.create({
+      baseURL: storageServiceUrl,
+      timeout: 5000,
+      headers: { "X-Service-Name": "PROCESSING_SERVICE" }
+    });
   }
 
-  async receivePackaging(data: ReceivePackagingRequest): Promise<StorageResponse> {
+  /**
+   * Pošalji ambalažu u Storage
+   */
+  async receivePackaging(packagingId: string): Promise<void> {
     try {
-    const requestData = {
-        ...data,
-        destinationWarehouseId: Number(data.destinationWarehouseId)
-      };
-      const response = await axios.post(
-        `${this.baseUrl}/api/v1/storage/packaging/receive`,
-        requestData,
-        {
-          timeout: 10000,
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Service-Origin': 'PROCESSING_SERVICE'
-          }
-        }
-      );
+      this.logger.debug("StorageClient", `Sending packaging ${packagingId} to storage`);
 
-      return response.data as any;
-    } catch (error: any) {
-      console.error(
-        "\x1b[31m[StorageClient]\x1b[0m Failed to send packaging to Storage:",
-        error.message
-      );
-      
-      // Fallback - return structured error response
-      return {
-        success: false,
-        message: error.response?.data?.message || error.message || "Storage service unavailable"
-      };
-    }
-  }
-
-  async getPackagingStatus(packagingId: number): Promise<StorageResponse> {
-    try {
-      const response = await axios.get(
-        `${this.baseUrl}/api/v1/storage/packaging/${packagingId}`,
-        {
-          timeout: 5000
-        }
-      );
-
-      return response.data as any;
-    } catch (error: any) {
-      console.error(
-        "\x1b[31m[StorageClient]\x1b[0m Failed to get packaging status:",
-        error.message
-      );
-      
-      return {
-        success: false,
-        message: error.message
-      };
+      await this.axiosInstance.post("/api/v1/storage/receive", { packagingId });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error("StorageClient", `Failed to send packaging to storage: ${message}`);
+      throw new ExternalServiceException(`Storage service error: ${message}`);
     }
   }
 }

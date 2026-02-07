@@ -1,9 +1,25 @@
-import app from './app';
+import "reflect-metadata";
+import app from "./app";
+import { AppDataSource } from "./Database/InitializeConnection";
+import { DbConnectionPool } from "./Database/DbConnectionPool";
+import { Logger } from "./Infrastructure/Logger";
 
-const port = process.env.PORT || 6503;
+const logger = Logger.getInstance();
+const PORT = process.env.PORT || 5005;
 
-app.listen(port, () => {
-  console.log(`\x1b[32m[Processing Service]\x1b[0m Running on port ${port}`);
-  console.log(`\x1b[36m[Processing Service]\x1b[0m Ready to process plants into perfumes`);
-  console.log(`\x1b[33m[Processing Service]\x1b[0m API available at http://localhost:${port}/api/v1`);
-});
+async function startServer() {
+  try {
+    await AppDataSource.initialize();
+    DbConnectionPool.setInstance(AppDataSource);
+
+    app.listen(PORT, () => {
+      logger.info("Server", `✅ Processing Microservice running on port ${PORT}`);
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    logger.error("Server", `❌ Failed to start server: ${message}`);
+    process.exit(1);
+  }
+}
+
+startServer();

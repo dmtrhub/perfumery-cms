@@ -1,86 +1,70 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany } from "typeorm";
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  Index,
+  ManyToOne,
+  JoinColumn
+} from "typeorm";
 import { PerfumeType } from "../enums/PerfumeType";
-import { BottleSize } from "../enums/BottleSize";
-import { ProcessingBatch } from "./ProcessingBatch";
+import { PerfumeStatus } from "../enums/PerfumeStatus";
+import { Packaging } from "./Packaging";
 
+/**
+ * Perfume Entity
+ * Predstavlja parfem u sistemu prerade
+ */
 @Entity("perfumes")
+@Index(["status"])
+@Index(["type"])
 export class Perfume {
-  @PrimaryGeneratedColumn()
-  id!: number;
+  @PrimaryGeneratedColumn("uuid")
+  id!: string;
 
   @Column({ type: "varchar", length: 100 })
   name!: string;
 
-  @Column({ 
-    type: "enum",
-    enum: PerfumeType,
-    name: "perfume_type"
-  })
+  @Column({ type: "enum", enum: PerfumeType })
   type!: PerfumeType;
 
-  @Column({ 
-    type: "enum",
-    enum: BottleSize,
-    default: BottleSize.ML_150,
-    name: "bottle_size"
-  })
-  bottleSize!: BottleSize;
+  @Column({ type: "int" })
+  netQuantityMl!: number; // 150 ili 250
 
-  @Column({ type: "int", default: 0 })
-  quantity!: number;
+  @Column({ type: "varchar", length: 50, unique: true })
+  serialNumber!: string; // PP-2025-{ID}
 
-  @Column({ type: "decimal", precision: 10, scale: 2, default: 0, name: "total_volume_ml" })
-  totalVolumeMl!: number;
+  @Column({ type: "uuid" })
+  plantId!: string;
 
-  @Column({ type: "int", default: 0, name: "reserved_quantity" })
-  reservedQuantity!: number;
+  @Column({ type: "date" })
+  expirationDate!: Date;
 
-  @CreateDateColumn({ name: "created_at" })
+  @Column({ type: "enum", enum: PerfumeStatus, default: PerfumeStatus.CREATED })
+  status!: PerfumeStatus;
+
+  @Column({ type: "uuid", nullable: true })
+  packagingId?: string;
+
+  @ManyToOne(() => Packaging, packaging => packaging.perfumes, { nullable: true })
+  @JoinColumn({ name: "packagingId" })
+  packaging?: Packaging;
+
+  @CreateDateColumn()
   createdAt!: Date;
 
-  @UpdateDateColumn({ name: "updated_at" })
-  updatedAt!: Date;
-
-  @OneToMany(() => ProcessingBatch, batch => batch.perfume)
-  batches!: ProcessingBatch[];
-
-  // Calculate plants needed for production (1 plant = 50ml perfume)
-  calculatePlantsNeeded(bottleCount: number): number {
-    const totalMlNeeded = bottleCount * this.bottleSize;
-    return Math.ceil(totalMlNeeded / 50);
-  }
-
-  // Add produced perfume to inventory
-  addProduction(bottleCount: number): void {
-    this.quantity += bottleCount;
-    this.totalVolumeMl += bottleCount * this.bottleSize;
-  }
-
-  // Reserve perfume for packaging
-  reserveForPackaging(quantity: number): boolean {
-    if (this.quantity - this.reservedQuantity >= quantity) {
-      this.reservedQuantity += quantity;
-      return true;
-    }
-    return false;
-  }
-
-  // Release reserved perfume (when shipped to warehouse)
-  releaseReserved(quantity: number): void {
-    if (this.reservedQuantity >= quantity) {
-      this.reservedQuantity -= quantity;
-      this.quantity -= quantity;
-      this.totalVolumeMl -= quantity * this.bottleSize;
-    }
-  }
-
-  // Get available quantity (not reserved)
-  getAvailableQuantity(): number {
-    return this.quantity - this.reservedQuantity;
-  }
-
-  // Check if enough perfume is available
-  hasEnoughQuantity(quantity: number): boolean {
-    return this.getAvailableQuantity() >= quantity;
+  toJSON() {
+    return {
+      id: this.id,
+      name: this.name,
+      type: this.type,
+      netQuantityMl: this.netQuantityMl,
+      serialNumber: this.serialNumber,
+      plantId: this.plantId,
+      expirationDate: this.expirationDate,
+      status: this.status,
+      packagingId: this.packagingId,
+      createdAt: this.createdAt
+    };
   }
 }
