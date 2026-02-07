@@ -1,301 +1,181 @@
 import { Repository } from "typeorm";
-import bcrypt from "bcryptjs";
+import * as bcrypt from "bcryptjs";
+import * as jwt from "jsonwebtoken";
 import { User } from "../Domain/models/User";
-import { IAuthService } from "../Domain/services/IAuthService";
-import { LoginUserDTO } from "../Domain/DTOs/LoginUserDTO";
-import { RegistrationUserDTO } from "../Domain/DTOs/RegistrationUserDTO";
-import { AuthResponseType } from "../Domain/types/AuthResponse";
-import { AuditClient } from "../External/AuditClient";
+import { LoginDTO } from "../Domain/DTOs/LoginDTO";
+import { RegisterDTO } from "../Domain/DTOs/RegisterDTO";
+import { Logger } from "../Infrastructure/Logger";
+import { IAuditClient } from "../External/IAuditClient";
+import { ConflictException } from "../Domain/exceptions/ConflictException";
+import { AuthenticationException } from "../Domain/exceptions/AuthenticationException";
 
-export class AuthService implements IAuthService {
-  private readonly saltRounds: number = parseInt(process.env.SALT_ROUNDS || "10", 10);
-  private auditClient: AuditClient;
+/**
+ * AuthService
+ * Implementacija poslovne logike za autentifikaciju
+ */
+export class AuthService {
+  private readonly logger: Logger;
+  private readonly JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
+  private readonly JWT_EXPIRY = "24h";
 
-  constructor(private userRepository: Repository<User>) {
-    this.auditClient = new AuditClient();
-    console.log("\x1b[35m[AuthService@1.0.0]\x1b[0m Service started");
+  constructor(
+    private readonly userRepository: Repository<User>,
+    private readonly auditClient: IAuditClient
+  ) {
+    this.logger = Logger.getInstance();
   }
 
   /**
-   * Login user - OVERLOAD 1: Bez audit parametara (za kompatibilnost)
+   * Registracija novog korisnika
    */
-  async login(data: LoginUserDTO): Promise<AuthResponseType>;
-  
-  /**
-   * Login user - OVERLOAD 2: Sa audit parametrima
-   */
-  async login(data: LoginUserDTO, ipAddress?: string, userAgent?: string): Promise<AuthResponseType>;
-  
-  /**
-   * Login user - IMPLEMENTACIJA
-   */
-  async login(data: LoginUserDTO, ipAddress?: string, userAgent?: string): Promise<AuthResponseType> {
-    const auditDetails = {
-      username: data.username,
-      ipAddress: ipAddress || 'unknown',
-      userAgent: userAgent || 'unknown',
-      timestamp: new Date().toISOString()
-    };
-
+  async register(dto: RegisterDTO): Promise<{ user: User }> {
     try {
-      console.log(`\x1b[35m[AuthService]\x1b[0m Login attempt for: ${data.username}`);
+      this.logger.info("AuthService", `👤 Registering user: ${dto.username}`);
 
-      // Audit: Login attempt started (ako je audit servis dostupan)
-      await this.auditClient.logInfo(
-        'AUTH',
-        'LOGIN_ATTEMPT',
-        `Login attempt for username: ${data.username}`,
-        auditDetails
-      ).catch(() => {}); // Ignoriši greške ako audit servis nije dostupan
-
-      const user = await this.userRepository.findOne({ where: { username: data.username } });
-      
-      if (!user) {
-        console.warn(`\x1b[33m[AuthService]\x1b[0m User not found: ${data.username}`);
-        
-        // Audit: User not found
-        await this.auditClient.logWarning(
-          'AUTH',
-          'LOGIN_FAILED',
-          `Login failed - user not found: ${data.username}`,
-          { ...auditDetails, reason: 'USER_NOT_FOUND' }
-        ).catch(() => {});
-        
-        return { authenificated: false };
-      }
-
-      const passwordMatches = await bcrypt.compare(data.password, user.password);
-      
-      if (!passwordMatches) {
-        console.warn(`\x1b[33m[AuthService]\x1b[0m Invalid password for: ${data.username}`);
-        
-        // Audit: Invalid password
-        await this.auditClient.logWarning(
-          'AUTH',
-          'LOGIN_FAILED',
-          `Login failed - invalid password for: ${data.username}`,
-          { 
-            ...auditDetails, 
-            userId: user.id,
-            userEmail: user.email,
-            reason: 'INVALID_PASSWORD'
-          }
-        ).catch(() => {});
-        
-        return { authenificated: false };
-      }
-
-      // Audit: Successful login
-      await this.auditClient.logInfo(
-        'AUTH',
-        'LOGIN_SUCCESS',
-        `User logged in successfully: ${data.username} (ID: ${user.id})`,
-        { 
-          ...auditDetails,
-          userId: user.id,
-          userEmail: user.email,
-          userRole: user.role
-        }
-      ).catch(() => {});
-
-      console.log(`\x1b[32m[AuthService]\x1b[0m Login successful for: ${data.username}`);
-
-      return {
-        authenificated: true,
-        userData: {
-          id: user.id,
-          username: user.username,
-          role: user.role,
-        },
-      };
-
-    } catch (error: any) {
-      console.error(`\x1b[31m[AuthService]\x1b[0m Login error for ${data.username}:`, error);
-      
-      // Audit: Login error
-      await this.auditClient.logError(
-        'AUTH',
-        'LOGIN_ERROR',
-        error,
-        auditDetails
-      ).catch(() => {});
-      
-      return { authenificated: false };
-    }
-  }
-
-  /**
-   * Register new user - OVERLOAD 1: Bez audit parametara
-   */
-  async register(data: RegistrationUserDTO): Promise<AuthResponseType>;
-  
-  /**
-   * Register new user - OVERLOAD 2: Sa audit parametrima
-   */
-  async register(data: RegistrationUserDTO, ipAddress?: string, userAgent?: string): Promise<AuthResponseType>;
-  
-  /**
-   * Register new user - IMPLEMENTACIJA
-   */
-  async register(data: RegistrationUserDTO, ipAddress?: string, userAgent?: string): Promise<AuthResponseType> {
-    const auditDetails = {
-      username: data.username,
-      email: data.email,
-      role: data.role,
-      ipAddress: ipAddress || 'unknown',
-      userAgent: userAgent || 'unknown',
-      timestamp: new Date().toISOString()
-    };
-
-    try {
-      console.log(`\x1b[35m[AuthService]\x1b[0m Registration attempt for: ${data.username}`);
-
-      // Audit: Registration attempt started
-      await this.auditClient.logInfo(
-        'AUTH',
-        'REGISTER_ATTEMPT',
-        `Registration attempt for username: ${data.username}`,
-        auditDetails
-      ).catch(() => {});
-
-      // Check if username or email already exists
+      // 1. Proveri da li korisnik već postoji
       const existingUser = await this.userRepository.findOne({
-        where: [{ username: data.username }, { email: data.email }],
+        where: [{ username: dto.username }, { email: dto.email }],
       });
 
       if (existingUser) {
-        console.warn(`\x1b[33m[AuthService]\x1b[0m Duplicate registration: ${data.username}/${data.email}`);
-        
-        // Audit: Duplicate registration
-        await this.auditClient.logWarning(
-          'AUTH',
-          'REGISTER_FAILED',
-          `Registration failed - duplicate username/email: ${data.username}`,
-          { 
-            ...auditDetails, 
-            reason: 'DUPLICATE_USER',
-            duplicateField: existingUser.username === data.username ? 'username' : 'email'
-          }
-        ).catch(() => {});
-        
-        return { authenificated: false };
+        this.logger.warn("AuthService", `User already exists: ${dto.username} or ${dto.email}`);
+        throw new ConflictException(
+          "Username or email already exists"
+        );
       }
 
-      const hashedPassword = await bcrypt.hash(data.password, this.saltRounds);
+      // 2. Heširaj lozinku
+      const password = await bcrypt.hash(dto.password, 10);
 
-      const newUser = this.userRepository.create({
-        username: data.username,
-        email: data.email,
-        role: data.role,
-        password: hashedPassword,
-        profileImage: data.profileImage ?? null,
+      // 3. Kreiraj korisnika
+      const user = this.userRepository.create({
+        username: dto.username,
+        password,
+        email: dto.email,
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+        role: dto.role,
+        profilePicture: dto.profilePicture,
       });
 
-      const savedUser = await this.userRepository.save(newUser);
+      const savedUser = await this.userRepository.save(user);
 
-      // Audit: Successful registration
+      this.logger.info("AuthService", `✅ User registered successfully: ${savedUser.username}`);
+
       await this.auditClient.logInfo(
-        'AUTH',
-        'REGISTER_SUCCESS',
-        `User registered successfully: ${data.username} (ID: ${savedUser.id})`,
-        { 
-          ...auditDetails,
-          userId: savedUser.id
-        }
-      ).catch(() => {});
+        "AUTH",
+        `User registered: ${savedUser.username} (${savedUser.email})`,
+        savedUser.id
+      );
 
-      console.log(`\x1b[32m[AuthService]\x1b[0m Registration successful for: ${data.username}`);
-
-      return {
-        authenificated: true,
-        userData: {
-          id: savedUser.id,
-          username: savedUser.username,
-          role: savedUser.role,
-        },
-      };
-
-    } catch (error: any) {
-      console.error(`\x1b[31m[AuthService]\x1b[0m Registration error for ${data.username}:`, error);
-      
-      // Audit: Registration error
-      await this.auditClient.logError(
-        'AUTH',
-        'REGISTER_ERROR',
-        error,
-        auditDetails
-      ).catch(() => {});
-      
-      return { authenificated: false };
+      return { user: savedUser };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error("AuthService", `❌ Registration failed: ${message}`);
+      await this.auditClient.logError("AUTH", `Registration failed: ${message}`);
+      throw error;
     }
   }
 
   /**
- * Log validation errors (dodajte ovo u klasu)
- */
-async logValidationError(
-  data: RegistrationUserDTO, 
-  validationMessage: string,
-  ipAddress?: string, 
-  userAgent?: string
-): Promise<void> {
-  const auditDetails = {
-    username: data.username || 'empty',
-    email: data.email || 'empty',
-    role: data.role || 'empty',
-    ipAddress: ipAddress || 'unknown',
-    userAgent: userAgent || 'unknown',
-    validationError: validationMessage,
-    timestamp: new Date().toISOString()
-  };
+   * Login - prijava korisnika
+   */
+  async login(dto: LoginDTO): Promise<{ token: string; user: User }> {
+    try {
+      this.logger.info("AuthService", `🔐 Login attempt for: ${dto.username}`);
 
-  try {
-    console.log(`\x1b[33m[AuthService]\x1b[0m Logging validation error: ${validationMessage}`);
-    
-    // Audit: Validation failed
-    await this.auditClient.logWarning(
-      'AUTH',
-      'REGISTER_VALIDATION_FAILED',
-      `Registration validation failed: ${validationMessage}`,
-      auditDetails
-    ).catch(() => {});
-    
-  } catch (error: any) {
-    console.error(`\x1b[31m[AuthService]\x1b[0m Failed to log validation error:`, error);
+      // 1. Pronađi korisnika
+      const user = await this.userRepository.findOne({
+        where: { username: dto.username },
+      });
+
+      if (!user) {
+        this.logger.warn("AuthService", `Login failed: User not found - ${dto.username}`);
+        throw new AuthenticationException("Invalid username or password");
+      }
+
+      // 2. Proveri lozinku
+      const isPasswordValid = await bcrypt.compare(dto.password, user.password);
+
+      if (!isPasswordValid) {
+        this.logger.warn("AuthService", `Login failed: Invalid password - ${dto.username}`);
+        throw new AuthenticationException("Invalid username or password");
+      }
+
+      // 3. Generiši JWT
+      const token = jwt.sign(
+        { id: user.id, username: user.username, role: user.role },
+        this.JWT_SECRET,
+        { expiresIn: this.JWT_EXPIRY }
+      );
+
+      this.logger.info("AuthService", `✅ Login successful: ${user.username}`);
+
+      await this.auditClient.logInfo(
+        "AUTH",
+        `User logged in: ${user.username}`,
+        user.id
+      );
+
+      return { token, user };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error("AuthService", `❌ Login failed: ${message}`);
+      await this.auditClient.logWarning("AUTH", `Login failed: ${message}`);
+      throw error;
+    }
   }
-}
 
-/**
- * Takođe dodajte za login validacione greške
- */
-async logLoginValidationError(
-  data: LoginUserDTO,
-  validationMessage: string,
-  ipAddress?: string,
-  userAgent?: string
-): Promise<void> {
-  const errorMessage = validationMessage || "Unknown validation error";
-
-  const auditDetails = {
-    username: data.username || 'empty',
-    ipAddress: ipAddress || 'unknown',
-    userAgent: userAgent || 'unknown',
-    validationError: validationMessage,
-    timestamp: new Date().toISOString()
-  };
-
+  /**
+   * Verify - verifikacija tokena
+   */
+  async verify(token: string): Promise<{ valid: boolean; user?: User }> {
   try {
-    console.log(`\x1b[33m[AuthService]\x1b[0m Logging login validation error: ${validationMessage}`);
+    this.logger.debug("AuthService", "🔍 Verifying token...");
+
+    if (!token) {
+      await this.auditClient.logWarning("AUTH", `Token verification failed: Token is required`);
+      throw new AuthenticationException("Token is required");
+    }
+
+    console.log('🔍 Token being verified:', token.substring(0, 50) + '...');
     
-    await this.auditClient.logWarning(
-      'AUTH',
-      'LOGIN_VALIDATION_FAILED',
-      `Login validation failed: ${validationMessage}`,
-      auditDetails
-    ).catch(() => {});
+    const decoded = jwt.verify(token, this.JWT_SECRET) as any;
     
-  } catch (error: any) {
-    console.error(`\x1b[31m[AuthService]\x1b[0m Failed to log login validation error:`, error);
+    console.log('🔍 Decoded token:', decoded);
+    console.log('🔍 Decoded keys:', Object.keys(decoded));
+    
+    // OVDE JE POPRAVKA: Koristi decoded.id umesto decoded.userId
+    const userId = decoded.id || decoded.userId;
+    
+    if (!userId) {
+      console.log('❌ Token missing id/userId field');
+      return { valid: false };
+    }
+
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      this.logger.warn("AuthService", `Token verification failed: User not found - ${userId}`);
+      return { valid: false };
+    }
+
+    this.logger.info("AuthService", `✅ Token verified for: ${user.username}`);
+
+    await this.auditClient.logInfo(
+      "AUTH",
+      `Token verified for: ${user.username}`,
+      user.id
+    );
+
+    return { valid: true, user };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    this.logger.warn("AuthService", `Token verification failed: ${message}`);
+    await this.auditClient.logWarning("AUTH", `Token verification failed: ${message}`);
+    return { valid: false };
   }
 }
 }

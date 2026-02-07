@@ -1,46 +1,43 @@
-import express from 'express';
-import cors from 'cors';
-import "reflect-metadata";
-import { initialize_database } from './Database/InitializeConnection';
-import dotenv from 'dotenv';
-import { Repository } from 'typeorm';
-import { User } from './Domain/models/User';
-import { Db } from './Database/DbConnectionPool';
-import { IAuthService } from './Domain/services/IAuthService';
-import { AuthService } from './Services/AuthService';
-import { AuthController } from './WebAPI/controllers/AuthController';
-import { ILogerService } from './Domain/services/ILogerService';
-import { LogerService } from './Services/LogerService';
+import express, { Application, Request, Response } from "express";
+import dotenv from "dotenv";
+import { AppDataSource } from "./Database/InitializeConnection";
+import { User } from "./Domain/models/User";
+import { ErrorHandler } from "./Middlewares/ErrorHandler";
+import { AuthController } from "./WebAPI/controllers/AuthController";
+import { AuthService } from "./Services/AuthService";
+import { AuditClient } from "./External/AuditClient";
 
-dotenv.config({ quiet: true });
+dotenv.config();
 
-const app = express();
-
-// Read CORS settings from environment
-const corsOrigin = process.env.CORS_ORIGIN ?? "*";
-const corsMethods = process.env.CORS_METHODS?.split(",").map(m => m.trim()) ?? ["POST"];
-
-// Protected microservice from unauthorized access
-app.use(cors({
-  origin: corsOrigin,
-  methods: corsMethods,
-}));
+const app: Application = express();
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-initialize_database();
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:5000").split(",").map(o => o.trim());
 
-// ORM Repositories
-const userRepository: Repository<User> = Db.getRepository(User);
+app.use((req: Request, res: Response, next) => {
+  const origin = req.headers.origin as string;
+  if (allowedOrigins.includes(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
+  }
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  next();
+});
 
 // Services
-const authService: IAuthService = new AuthService(userRepository);
-const logerService: ILogerService = new LogerService();
+const userRepository = AppDataSource.getRepository(User);
+const auditClient = new AuditClient();
+const authService = new AuthService(userRepository, auditClient);
+const authController = new AuthController(authService);
 
-// WebAPI routes
-const authController = new AuthController(authService, logerService);
+app.use("/api/v1/auth", authController.getRouter());
 
-// Registering routes
-app.use('/api/v1', authController.getRouter());
+app.get("/health", (req: Request, res: Response) => {
+  res.status(200).json({ status: "OK", service: "auth-microservice" });
+});
+
+app.use(ErrorHandler);
 
 export default app;

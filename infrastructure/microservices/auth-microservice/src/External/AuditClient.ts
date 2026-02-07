@@ -1,69 +1,60 @@
-import axios from 'axios';
+import axios, { AxiosInstance } from 'axios';
+import { Logger } from '../Infrastructure/Logger';
+import { IAuditClient } from './IAuditClient';
 
-export class AuditClient {
-  private baseUrl: string;
-  
-  constructor(baseUrl: string = process.env.AUDIT_SERVICE_URL || 'http://localhost:3004') {
-    this.baseUrl = baseUrl;
+export class AuditClient implements IAuditClient {
+  private readonly logger: Logger;
+  private client: AxiosInstance;
+  private baseURL: string;
+
+  constructor() {
+    this.logger = Logger.getInstance();
+    this.baseURL = process.env.AUDIT_SERVICE_URL || 'http://localhost:5003';
+    this.client = axios.create({
+      baseURL: this.baseURL,
+      timeout: 10000
+    });
   }
-  
-  async log(data: {
-    service: string;
-    action: string;
-    userId?: number;
-    userEmail?: string;
-    entityId?: string;
-    entityType?: string;
-    logLevel?: string;
-    message: string;
-    details?: Record<string, any>;
-    ipAddress?: string;
-    userAgent?: string;
-    successful?: boolean;
-  }): Promise<void> {
+
+  async logInfo(source: string, description: string, userId?: string): Promise<void> {
     try {
-      await axios.post(`${this.baseUrl}/api/v1/logs`, data, {
-        timeout: 3000
+      await this.client.post('/api/v1/audit/logs', {
+        type: 'INFO',
+        description,
+        serviceName: source,
+        userId: userId || null
       });
     } catch (error: any) {
-      // Silent fallback - don't break auth if audit service is down
-      console.error('\x1b[31m[AuditClient]\x1b[0m Failed to send audit log (silent fallback)');
+      const message = error.response?.data?.message || error.response?.status || error.message || 'Unknown error';
+      this.logger.warn('AuditClient', `Failed to log INFO: ${message}`);
     }
   }
-  
-  async logInfo(service: string, action: string, message: string, details?: any): Promise<void> {
-    return this.log({
-      service,
-      action,
-      logLevel: 'INFO',
-      message,
-      details,
-      successful: true
-    });
+
+  async logWarning(source: string, description: string, userId?: string): Promise<void> {
+    try {
+      await this.client.post('/api/v1/audit/logs', {
+        type: 'WARNING',
+        description,
+        serviceName: source,
+        userId: userId || null
+      });
+    } catch (error: any) {
+      const message = error.response?.data?.message || error.response?.status || error.message || 'Unknown error';
+      this.logger.warn('AuditClient', `Failed to log WARNING: ${message}`);
+    }
   }
-  
-  async logError(service: string, action: string, error: Error, context?: any): Promise<void> {
-    return this.log({
-      service,
-      action,
-      logLevel: 'ERROR',
-      message: error.message,
-      details: {
-        error: error.stack,
-        context
-      },
-      successful: false
-    });
-  }
-  
-  async logWarning(service: string, action: string, message: string, details?: any): Promise<void> {
-    return this.log({
-      service,
-      action,
-      logLevel: 'WARNING',
-      message,
-      details,
-      successful: false
-    });
+
+  async logError(source: string, description: string, userId?: string): Promise<void> {
+    try {
+      await this.client.post('/api/v1/audit/logs', {
+        type: 'ERROR',
+        description,
+        serviceName: source,
+        userId: userId || null
+      });
+    } catch (error: any) {
+      const message = error.response?.data?.message || error.response?.status || error.message || 'Unknown error';
+      this.logger.warn('AuditClient', `Failed to log ERROR: ${message}`);
+    }
   }
 }
