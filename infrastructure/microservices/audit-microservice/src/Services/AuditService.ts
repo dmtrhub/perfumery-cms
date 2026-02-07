@@ -1,165 +1,152 @@
-import { Repository, MoreThanOrEqual, LessThanOrEqual, Like, FindOptionsWhere } from "typeorm";
-import { AuditLog } from "../Domain/models/AuditLog";
-import { LogLevel } from "../Domain/enums/LogLevel";
-import { AuditAction } from "../Domain/enums/AuditAction";
-import { ServiceType } from "../Domain/enums/ServiceType";
+import { Repository } from "typeorm";
 import { IAuditService } from "../Domain/services/IAuditService";
-import { AuditLogDTO } from "../Domain/DTOs/AuditLogDTO";
+import { AuditLog } from "../Domain/models/AuditLog";
 import { CreateAuditLogDTO } from "../Domain/DTOs/CreateAuditLogDTO";
-import { QueryAuditLogsDTO } from "../Domain/DTOs/QueryAuditLogsDTO";
+import { FilterAuditLogsDTO } from "../Domain/DTOs/FilterAuditLogsDTO";
+import { Logger } from "../Infrastructure/Logger";
+import { ResourceNotFoundException } from "../Domain/exceptions/ResourceNotFoundException";
 
+/**
+ * AuditRepositoryService
+ * 
+ * Implementacija poslovne logike za rad sa audit logovima
+ */
 export class AuditService implements IAuditService {
-  constructor(private auditLogRepository: Repository<AuditLog>) {
-    console.log("\x1b[35m[AuditService@1.0.0]\x1b[0m Service started");
+  private readonly logger: Logger;
+
+  constructor(private readonly auditRepository: Repository<AuditLog>) {
+    this.logger = Logger.getInstance();
   }
 
-  async createLog(data: CreateAuditLogDTO): Promise<AuditLogDTO> {
+  /**
+   * Kreiraj novi audit log
+   */
+  async createAuditLog(dto: CreateAuditLogDTO): Promise<AuditLog> {
     try {
-      console.log(`\x1b[35m[AuditService]\x1b[0m Creating audit log: ${data.service}.${data.action}`);
+      this.logger.debug(
+        "AuditRepositoryService",
+        `Creating audit log for service: ${dto.serviceName}`
+      );
 
-      const newLog = new AuditLog();
-      newLog.service = data.service;
-      newLog.action = data.action;
-      newLog.userId = data.userId;
-      newLog.userEmail = data.userEmail;
-      newLog.entityId = data.entityId;
-      newLog.entityType = data.entityType;
-      newLog.logLevel = data.logLevel || LogLevel.INFO;
-      newLog.message = data.message;
-      newLog.details = data.details;
-      newLog.ipAddress = data.ipAddress;
-      newLog.userAgent = data.userAgent;
-      newLog.successful = data.successful !== undefined ? data.successful : true;
-      newLog.source = data.source;
+      const auditLog = this.auditRepository.create({
+        type: dto.type,
+        serviceName: dto.serviceName,
+        description: dto.description,
+        userId: dto.userId,
+        ipAddress: dto.ipAddress
+      });
 
-      const savedLog = await this.auditLogRepository.save(newLog);
+      const saved = await this.auditRepository.save(auditLog);
 
-      // Log the audit event itself
-      console.log(`\x1b[32m[AuditService]\x1b[0m Audit log created: ${savedLog.id} - ${savedLog.service}.${savedLog.action}`);
+      this.logger.info(
+        "AuditRepositoryService",
+        `✅ Audit log created: ${saved.id}`
+      );
 
-      return this.toAuditLogDTO(savedLog);
-    } catch (error) {
-      console.error(`\x1b[31m[AuditService]\x1b[0m Failed to create audit log:`, error);
-      throw new Error(`Failed to create audit log: ${error}`);
+      return saved;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error("AuditRepositoryService", `❌ Failed to create audit log: ${message}`);
+      throw error;
     }
   }
 
-  async getLogs(query: QueryAuditLogsDTO): Promise<AuditLogDTO[]> {
-    console.log("\x1b[35m[AuditService]\x1b[0m Getting audit logs with query");
-    
-    const where: FindOptionsWhere<AuditLog> = {};
-    
-    if (query.service) where.service = query.service;
-    if (query.action) where.action = query.action;
-    if (query.userId) where.userId = query.userId;
-    if (query.entityId) where.entityId = query.entityId;
-    if (query.entityType) where.entityType = query.entityType;
-    if (query.logLevel) where.logLevel = query.logLevel;
-    
-    const logs = await this.auditLogRepository.find({
-      where,
-      order: { timestamp: "DESC" },
-      take: query.limit || 100,
-      skip: query.page ? (query.page - 1) * (query.limit || 100) : 0
-    });
-    
-    return logs.map(log => this.toAuditLogDTO(log));
+  /**
+   * Dohvati audit log po ID-u
+   */
+  async getAuditLogById(id: string): Promise<AuditLog> {
+    try {
+      this.logger.debug("AuditRepositoryService", `Fetching audit log: ${id}`);
+
+      const auditLog = await this.auditRepository.findOne({ where: { id } });
+
+      if (!auditLog) {
+        throw new ResourceNotFoundException(`Audit log with ID ${id} not found`);
+      }
+
+      this.logger.info(
+        "AuditRepositoryService",
+        `✅ Fetched audit log: ${auditLog.id}`
+      );
+
+      return auditLog;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error("AuditRepositoryService", `❌ Failed to fetch audit log: ${message}`);
+      throw error;
+    }
   }
 
-  async getLogById(id: number): Promise<AuditLogDTO | null> {
-    console.log(`\x1b[35m[AuditService]\x1b[0m Getting audit log by ID: ${id}`);
-    
-    const log = await this.auditLogRepository.findOne({ where: { id } });
-    return log ? this.toAuditLogDTO(log) : null;
+  /**
+   * Dohvati sve audit logove sa filterima
+   */
+  async getAllAuditLogs(filters?: FilterAuditLogsDTO): Promise<AuditLog[]> {
+    try {
+      this.logger.debug(
+        "AuditRepositoryService",
+        `Fetching audit logs with filters: ${JSON.stringify(filters)}`
+      );
+
+      let query = this.auditRepository.createQueryBuilder("audit");
+
+      if (filters?.type) {
+        query = query.where("audit.type = :type", { type: filters.type });
+      }
+
+      if (filters?.serviceName) {
+        query = query.andWhere("audit.serviceName = :serviceName", {
+          serviceName: filters.serviceName
+        });
+      }
+
+      if (filters?.fromDate) {
+        query = query.andWhere("audit.timestamp >= :fromDate", {
+          fromDate: new Date(filters.fromDate)
+        });
+      }
+
+      if (filters?.toDate) {
+        query = query.andWhere("audit.timestamp <= :toDate", {
+          toDate: new Date(filters.toDate)
+        });
+      }
+
+      query = query.orderBy("audit.timestamp", "DESC");
+
+      const auditLogs = await query.getMany();
+
+      this.logger.info(
+        "AuditRepositoryService",
+        `✅ Fetched ${auditLogs.length} audit logs`
+      );
+
+      return auditLogs;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error("AuditRepositoryService", `❌ Failed to fetch audit logs: ${message}`);
+      throw error;
+    }
   }
 
-  async getLogsByService(service: string, limit: number = 100): Promise<AuditLogDTO[]> {
-    console.log(`\x1b[35m[AuditService]\x1b[0m Getting logs for service: ${service}`);
-    
-    const logs = await this.auditLogRepository.find({
-      where: { service: service as ServiceType },
-      order: { timestamp: "DESC" },
-      take: limit
-    });
-    
-    return logs.map(log => this.toAuditLogDTO(log));
-  }
+  /**
+   * Obriši audit log
+   */
+  async deleteAuditLog(id: string): Promise<void> {
+    try {
+      this.logger.debug("AuditRepositoryService", `Deleting audit log: ${id}`);
 
-  async getLogsByEntity(entityId: string, entityType?: string): Promise<AuditLogDTO[]> {
-    console.log(`\x1b[35m[AuditService]\x1b[0m Getting logs for entity: ${entityId}${entityType ? ` (${entityType})` : ''}`);
-    
-    const where: FindOptionsWhere<AuditLog> = { entityId };
-    if (entityType) where.entityType = entityType;
-    
-    const logs = await this.auditLogRepository.find({
-      where,
-      order: { timestamp: "DESC" }
-    });
-    
-    return logs.map(log => this.toAuditLogDTO(log));
-  }
+      const auditLog = await this.getAuditLogById(id);
 
-  async deleteOldLogs(days: number): Promise<number> {
-    console.log(`\x1b[35m[AuditService]\x1b[0m Deleting logs older than ${days} days`);
-    
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - days);
-    
-    const result = await this.auditLogRepository.createQueryBuilder()
-      .delete()
-      .from(AuditLog)
-      .where("timestamp < :cutoffDate", { cutoffDate })
-      .execute();
-    
-    const deletedCount = result.affected || 0;
-    console.log(`\x1b[32m[AuditService]\x1b[0m Deleted ${deletedCount} old audit logs`);
-    
-    return deletedCount;
-  }
+      await this.auditRepository.remove(auditLog);
 
-  async logSystemEvent(service: ServiceType, message: string, details?: any): Promise<AuditLogDTO> {
-    return this.createLog({
-      service,
-      action: AuditAction.SYSTEM_EVENT,
-      logLevel: LogLevel.INFO,
-      message,
-      details,
-      source: "SYSTEM"
-    });
-  }
-
-  async logErrorEvent(service: ServiceType, error: Error, context?: any): Promise<AuditLogDTO> {
-    return this.createLog({
-      service,
-      action: AuditAction.SYSTEM_EVENT,
-      logLevel: LogLevel.ERROR,
-      message: error.message,
-      details: {
-        error: error.stack,
-        context
-      },
-      source: "SYSTEM"
-    });
-  }
-
-  private toAuditLogDTO(log: AuditLog): AuditLogDTO {
-    return {
-      id: log.id,
-      service: log.service,
-      action: log.action,
-      userId: log.userId,
-      userEmail: log.userEmail,
-      entityId: log.entityId,
-      entityType: log.entityType,
-      logLevel: log.logLevel,
-      message: log.message,
-      details: log.details,
-      ipAddress: log.ipAddress,
-      userAgent: log.userAgent,
-      timestamp: log.timestamp,
-      createdAt: log.createdAt,
-      successful: log.successful,
-      source: log.source
-    };
+      this.logger.info(
+        "AuditRepositoryService",
+        `✅ Audit log deleted: ${id}`
+      );
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      this.logger.error("AuditRepositoryService", `❌ Failed to delete audit log: ${message}`);
+      throw error;
+    }
   }
 }

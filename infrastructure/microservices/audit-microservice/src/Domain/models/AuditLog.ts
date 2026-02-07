@@ -1,58 +1,53 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from "typeorm";
-import { LogLevel } from "../enums/LogLevel";
-import { AuditAction } from "../enums/AuditAction";
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  Index
+} from "typeorm";
+import { AuditLogType } from "../enums/AuditLogType";
 import { ServiceType } from "../enums/ServiceType";
 
+/**
+ * AuditLog Entity
+ * Predstavlja jedan zapis dogadjaja u sistemu
+ */
 @Entity("audit_logs")
+@Index(["type"])
+@Index(["serviceName"])
+@Index(["timestamp"])
+@Index(["userId"])
 export class AuditLog {
-  @PrimaryGeneratedColumn()
-  id!: number;
+  @PrimaryGeneratedColumn("uuid")
+  id!: string;
+
+  @Column({ type: "enum", enum: AuditLogType })
+  type!: AuditLogType;
 
   @Column({ type: "enum", enum: ServiceType })
-  service!: ServiceType;
-
-  @Column({ type: "enum", enum: AuditAction })
-  action!: AuditAction;
-
-  @Column({ nullable: true })
-  userId?: number;
-
-  @Column({ nullable: true })
-  userEmail?: string;
-
-  @Column({ nullable: true })
-  entityId?: string;
-
-  @Column({ nullable: true })
-  entityType?: string;
-
-  @Column({ type: "enum", enum: LogLevel, default: LogLevel.INFO })
-  logLevel!: LogLevel;
+  serviceName!: ServiceType;
 
   @Column({ type: "text" })
-  message!: string;
+  description!: string;
 
-  @Column({ type: "json", nullable: true })
-  details?: Record<string, any>;
+  @Column({ type: "uuid", nullable: true })
+  userId?: string;
 
-  @Column({ nullable: true })
+  @Column({ type: "varchar", length: 45, nullable: true })
   ipAddress?: string;
 
-  @Column({ type: "text", nullable: true })
-  userAgent?: string;
-
-  @Column({ type: "timestamp", default: () => "CURRENT_TIMESTAMP" })
+  @CreateDateColumn()
   timestamp!: Date;
 
-  @CreateDateColumn()
-  createdAt!: Date;
-
-  @UpdateDateColumn()
-  updatedAt!: Date;
-
-  @Column({ default: true })
-  successful!: boolean;
-
-  @Column({ nullable: true })
-  source?: string;
+  toJSON() {
+    return {
+      id: this.id,
+      type: this.type,
+      serviceName: this.serviceName,
+      description: this.description,
+      userId: this.userId,
+      ipAddress: this.ipAddress,
+      timestamp: this.timestamp
+    };
+  }
 }

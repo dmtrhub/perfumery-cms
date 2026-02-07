@@ -1,13 +1,10 @@
-import { CreateAuditLogDTO } from "../DTOs/CreateAuditLogDTO";
-import { QueryAuditLogsDTO } from "../DTOs/QueryAuditLogsDTO";
-import { AuditLogDTO } from "../DTOs/AuditLogDTO";
 import { AuditLog } from "../models/AuditLog";
+import { CreateAuditLogDTO } from "../DTOs/CreateAuditLogDTO";
+import { FilterAuditLogsDTO } from "../DTOs/FilterAuditLogsDTO";
 
 export interface IAuditService {
-  createLog(data: CreateAuditLogDTO): Promise<AuditLogDTO>;
-  getLogs(query: QueryAuditLogsDTO): Promise<AuditLogDTO[]>;
-  getLogById(id: number): Promise<AuditLogDTO | null>;
-  getLogsByService(service: string, limit?: number): Promise<AuditLogDTO[]>;
-  getLogsByEntity(entityId: string, entityType?: string): Promise<AuditLogDTO[]>;
-  deleteOldLogs(days: number): Promise<number>;
+  createAuditLog(dto: CreateAuditLogDTO): Promise<AuditLog>;
+  getAuditLogById(id: string): Promise<AuditLog>;
+  getAllAuditLogs(filters?: FilterAuditLogsDTO): Promise<AuditLog[]>;
+  deleteAuditLog(id: string): Promise<void>;
 }

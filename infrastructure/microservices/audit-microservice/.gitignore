@@ -34,7 +34,15 @@ build/Release
 
 # Dependency directories
 node_modules/
-jspm_packages/
+dist/
+*.log
+.env
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
 # TypeScript v1 declaration files
 typings/
@@ -68,5 +76,3 @@ typings/
 
 # Serverless directories
 .serverless
-
-dist

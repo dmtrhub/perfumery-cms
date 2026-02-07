@@ -1,22 +1,12 @@
-import { LogLevel } from "../enums/LogLevel";
-import { AuditAction } from "../enums/AuditAction";
+import { AuditLogType } from "../enums/AuditLogType";
 import { ServiceType } from "../enums/ServiceType";
 
-export interface AuditLogDTO {
-  id: number;
-  service: ServiceType;
-  action: AuditAction;
-  userId?: number;
-  userEmail?: string;
-  entityId?: string;
-  entityType?: string;
-  logLevel: LogLevel;
-  message: string;
-  details?: Record<string, any>;
+export class AuditLogDTO {
+  id!: string;
+  type!: AuditLogType;
+  serviceName!: ServiceType;
+  description!: string;
+  userId?: string;
   ipAddress?: string;
-  userAgent?: string;
-  timestamp: Date;
-  createdAt: Date;
-  successful: boolean;
-  source?: string;
+  timestamp!: Date;
 }
