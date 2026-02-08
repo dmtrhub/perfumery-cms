@@ -3,6 +3,7 @@ import { IAuthAPI } from "../../api/auth/IAuthAPI";
 import { LoginUserDTO } from "../../models/auth/LoginUserDTO";
 import { useAuth } from "../../hooks/useAuthHook";
 import { useNavigate } from "react-router-dom";
+import { OAuthButtons } from "./OAuthButtons";
 
 type LoginFormProps = {
   authAPI: IAuthAPI;
@@ -33,15 +34,16 @@ export const LoginForm: React.FC<LoginFormProps> = ({ authAPI }) => {
 
     try {
       const response = await authAPI.login(formData);
+      const token = response.data?.token || response.token;
 
-      if (response.success && response.token) {
-        login(response.token);
+      if (response.success && token) {
+        login(token);
         navigate("/dashboard");
       } else {
         setError(response.message || "Login failed. Please try again.");
       }
     } catch (err: any) {
-      setError(err || "An error occurred. Please try again.");
+      setError(err?.response?.data?.message || err?.message || "An error occurred. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -50,7 +52,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ authAPI }) => {
   useEffect(() => {
     if(isAuthenticated)
         navigate("/dashboard");
-  })
+  }, [isAuthenticated])
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -119,6 +121,9 @@ export const LoginForm: React.FC<LoginFormProps> = ({ authAPI }) => {
           "Login"
         )}
       </button>
+
+      {/* OAuth 2.0 Login Buttons */}
+      <OAuthButtons />
     </form>
   );
 };

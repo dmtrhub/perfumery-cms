@@ -82,9 +82,9 @@ export class AuditService implements IAuditService {
    */
   async getAllAuditLogs(filters?: FilterAuditLogsDTO): Promise<AuditLog[]> {
     try {
-      this.logger.debug(
-        "AuditRepositoryService",
-        `Fetching audit logs with filters: ${JSON.stringify(filters)}`
+      this.logger.info(
+        "AuditService",
+        `getAllAuditLogs called - type: '${filters?.type || 'NONE'}', serviceName: '${filters?.serviceName || 'NONE'}'`
       );
 
       let query = this.auditRepository.createQueryBuilder("audit");
@@ -94,21 +94,11 @@ export class AuditService implements IAuditService {
       }
 
       if (filters?.serviceName) {
-        query = query.andWhere("audit.serviceName = :serviceName", {
-          serviceName: filters.serviceName
-        });
-      }
-
-      if (filters?.fromDate) {
-        query = query.andWhere("audit.timestamp >= :fromDate", {
-          fromDate: new Date(filters.fromDate)
-        });
-      }
-
-      if (filters?.toDate) {
-        query = query.andWhere("audit.timestamp <= :toDate", {
-          toDate: new Date(filters.toDate)
-        });
+        if (filters?.type) {
+          query = query.andWhere("audit.serviceName = :serviceName", { serviceName: filters.serviceName });
+        } else {
+          query = query.where("audit.serviceName = :serviceName", { serviceName: filters.serviceName });
+        }
       }
 
       query = query.orderBy("audit.timestamp", "DESC");
@@ -116,7 +106,7 @@ export class AuditService implements IAuditService {
       const auditLogs = await query.getMany();
 
       this.logger.info(
-        "AuditRepositoryService",
+        "AuditService",
         `✅ Fetched ${auditLogs.length} audit logs`
       );
 

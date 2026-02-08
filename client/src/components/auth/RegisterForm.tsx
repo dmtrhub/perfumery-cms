@@ -4,6 +4,7 @@ import { RegistrationUserDTO } from "../../models/auth/RegistrationUserDTO";
 import { UserRole } from "../../enums/UserRole";
 import { useAuth } from "../../hooks/useAuthHook";
 import { useNavigate } from "react-router-dom";
+import { OAuthButtons } from "./OAuthButtons";
 
 type RegisterFormProps = {
   authAPI: IAuthAPI;
@@ -14,8 +15,10 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ authAPI }) => {
     username: "",
     email: "",
     password: "",
-    role: UserRole.SELLER,
-    profileImage: "",
+    firstName: "",
+    lastName: "",
+    role: UserRole.SALESPERSON,
+    profilePicture: "",
   });
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string>("");
@@ -53,13 +56,14 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ authAPI }) => {
 
     try {
       const response = await authAPI.register(formData);
+      const token = response.data?.token || response.token;
 
       if (response.success) {
         setSuccess(response.message || "Registration successful!");
         
         // Auto-login if token is provided
-        if (response.token) {
-          login(response.token);
+        if (token) {
+          login(token);
           setTimeout(() => {
             navigate("/dashboard");
           }, 1500);
@@ -78,7 +82,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ authAPI }) => {
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       <div>
         <label htmlFor="username" style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: 600 }}>
-          Username
+          Korisni\u010dko ime
         </label>
         <input
           type="text"
@@ -86,7 +90,39 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ authAPI }) => {
           name="username"
           value={formData.username}
           onChange={handleChange}
-          placeholder="Choose a username"
+          placeholder="Izaberite korisni\u010dko ime"
+          required
+          disabled={isLoading}
+        />
+      </div>
+
+      <div>
+        <label htmlFor="firstName" style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: 600 }}>
+          Ime
+        </label>
+        <input
+          type="text"
+          id="firstName"
+          name="firstName"
+          value={formData.firstName}
+          onChange={handleChange}
+          placeholder="Unesite ime"
+          required
+          disabled={isLoading}
+        />
+      </div>
+
+      <div>
+        <label htmlFor="lastName" style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: 600 }}>
+          Prezime
+        </label>
+        <input
+          type="text"
+          id="lastName"
+          name="lastName"
+          value={formData.lastName}
+          onChange={handleChange}
+          placeholder="Unesite prezime"
           required
           disabled={isLoading}
         />
@@ -120,8 +156,9 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ authAPI }) => {
           required
           disabled={isLoading}
         >
-          <option value={UserRole.SELLER}>Seller</option>
-          <option value={UserRole.ADMIN}>Admin</option>
+          <option value={UserRole.SALESPERSON}>Prodavac</option>
+          <option value={UserRole.SALES_MANAGER}>Menadžer prodaje</option>
+          <option value={UserRole.ADMIN}>Administrator</option>
         </select>
       </div>
 
@@ -162,13 +199,13 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ authAPI }) => {
 
       <div>
         <label htmlFor="profileImage" style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: 600 }}>
-          Profile Image URL <span style={{ color: "var(--win11-text-tertiary)", fontWeight: 400 }}>(Optional)</span>
+          Profile Image URL <span style={{ color: "var(--win11-text-tertiary)", fontWeight: 400 }}>(Opciono)</span>
         </label>
         <input
           type="url"
-          id="profileImage"
-          name="profileImage"
-          value={formData.profileImage}
+          id="profilePicture"
+          name="profilePicture"
+          value={formData.profilePicture || ""}
           onChange={handleChange}
           placeholder="https://example.com/avatar.jpg"
           disabled={isLoading}
@@ -226,6 +263,9 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ authAPI }) => {
           "Register"
         )}
       </button>
+
+      {/* OAuth 2.0 Register/Login Buttons */}
+      <OAuthButtons />
     </form>
   );
 };

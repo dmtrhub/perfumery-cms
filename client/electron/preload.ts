@@ -6,28 +6,36 @@ type WindowChannels =
   | 'window:maximize'
   | 'window:close'
 
+type OAuthChannels =
+  | 'oauth:token'
+  | 'oauth:error'
+
+type AllChannels = WindowChannels | OAuthChannels
+
 type Listener<T = unknown> = (data: T) => void
 
 // WeakMap now stores Listener<unknown>, no generic T
 const listenerMap = new WeakMap<
   Listener<unknown>,
-  Map<WindowChannels, (event: IpcRendererEvent, data: unknown) => void>
+  Map<AllChannels, (event: IpcRendererEvent, data: unknown) => void>
 >()
 
 export type ElectronAPI = {
   minimize: () => void
   maximize: () => void
   close: () => void
-  on: <T>(channel: WindowChannels, listener: Listener<T>) => void
-  off: <T>(channel: WindowChannels, listener: Listener<T>) => void
+  openOAuth: (provider: 'google' | 'github') => void
+  on: <T>(channel: AllChannels, listener: Listener<T>) => void
+  off: <T>(channel: AllChannels, listener: Listener<T>) => void
 }
 
 const electronAPI: ElectronAPI = {
   minimize: () => ipcRenderer.send('window:minimize'),
   maximize: () => ipcRenderer.send('window:maximize'),
   close: () => ipcRenderer.send('window:close'),
+  openOAuth: (provider: 'google' | 'github') => ipcRenderer.send('oauth:open', provider),
 
-  on: <T>(channel: WindowChannels, listener: Listener<T>) => {
+  on: <T>(channel: AllChannels, listener: Listener<T>) => {
     const wrapped = (_event: IpcRendererEvent, data: unknown) => {
       listener(data as T) // cast only here
     }
@@ -43,7 +51,7 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.on(channel, wrapped)
   },
 
-  off: <T>(channel: WindowChannels, listener: Listener<T>) => {
+  off: <T>(channel: AllChannels, listener: Listener<T>) => {
     const channelMap = listenerMap.get(listener as Listener<unknown>)
     if (!channelMap) return
 

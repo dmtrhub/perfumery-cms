@@ -44,9 +44,13 @@ export class GatewayController {
 
     this.router.post("/auth/verify", asyncHandler(this.proxyToAuth.bind(this)));
 
+    // === OAuth 2.0 ROUTES (PUBLIC - browser redirects) ===
+    this.router.get("/auth/google", asyncHandler(this.redirectToOAuth.bind(this)));
+    this.router.get("/auth/github", asyncHandler(this.redirectToOAuth.bind(this)));
+
     // Auth protected endpoints
     this.router.all(
-      /^\/auth\/(?!login$|register$|verify$).*/,
+      /^\/auth\/(?!login$|register$|verify$|google|github|oauth-success).*/,
       authenticate,
       authorizationMiddleware(),
       asyncHandler(this.proxyToAuth.bind(this))
@@ -144,6 +148,19 @@ export class GatewayController {
         version: "1.0.0",
       },
     });
+  }
+
+  /**
+   * Preusmerava browser direktno na auth servis za OAuth flow
+   * Potreban je browser redirect umesto proxy-ja jer OAuth koristi 302 preusmerenja
+   */
+  private async redirectToOAuth(req: Request, res: Response): Promise<void> {
+    const authUrl = process.env.AUTH_SERVICE_API || "http://localhost:5001";
+    const oauthPath = req.originalUrl; // /auth/google or /auth/github
+    const targetUrl = `${authUrl}/api/v1${oauthPath}`;
+
+    this.logger.info("Gateway", `🔐 OAuth redirect: ${oauthPath} → ${targetUrl}`);
+    res.redirect(targetUrl);
   }
 
   private async proxyToAuth(req: Request, res: Response): Promise<void> {

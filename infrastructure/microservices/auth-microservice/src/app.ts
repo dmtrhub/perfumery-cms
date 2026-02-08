@@ -5,6 +5,7 @@ import { User } from "./Domain/models/User";
 import { ErrorHandler } from "./Middlewares/ErrorHandler";
 import { AuthController } from "./WebAPI/controllers/AuthController";
 import { AuthService } from "./Services/AuthService";
+import { OAuthService } from "./Services/OAuthService";
 import { AuditClient } from "./External/AuditClient";
 
 dotenv.config();
@@ -30,7 +31,8 @@ app.use((req: Request, res: Response, next) => {
 const userRepository = AppDataSource.getRepository(User);
 const auditClient = new AuditClient();
 const authService = new AuthService(userRepository, auditClient);
-const authController = new AuthController(authService);
+const oauthService = new OAuthService();
+const authController = new AuthController(authService, oauthService);
 
 app.use("/api/v1/auth", authController.getRouter());
 

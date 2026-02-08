@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import { AuthService } from "../../Services/AuthService";
+import { OAuthService } from "../../Services/OAuthService";
 import { LoginDTO } from "../../Domain/DTOs/LoginDTO";
 import { RegisterDTO } from "../../Domain/DTOs/RegisterDTO";
 import { Logger } from "../../Infrastructure/Logger";
@@ -8,13 +9,16 @@ import { ValidatorMiddleware } from "../../Middlewares/ValidatorMiddleware";
 
 /**
  * AuthController
- * REST API endpoints za autentifikaciju
+ * REST API endpoints za autentifikaciju i OAuth 2.0
  */
 export class AuthController {
   private router: Router;
   private readonly logger: Logger;
 
-  constructor(private readonly authService: AuthService) {
+  constructor(
+    private readonly authService: AuthService,
+    private readonly oauthService: OAuthService
+  ) {
     this.router = Router();
     this.logger = Logger.getInstance();
     this.setupRoutes();
@@ -36,6 +40,36 @@ export class AuthController {
     this.router.post(
       "/verify",
       asyncHandler(this.verify.bind(this))
+    );
+
+    // === OAuth 2.0 Routes ===
+
+    // Google OAuth
+    this.router.get(
+      "/google",
+      asyncHandler(this.googleAuth.bind(this))
+    );
+
+    this.router.get(
+      "/google/callback",
+      asyncHandler(this.googleCallback.bind(this))
+    );
+
+    // GitHub OAuth
+    this.router.get(
+      "/github",
+      asyncHandler(this.githubAuth.bind(this))
+    );
+
+    this.router.get(
+      "/github/callback",
+      asyncHandler(this.githubCallback.bind(this))
+    );
+
+    // OAuth success page
+    this.router.get(
+      "/oauth-success",
+      asyncHandler(this.oauthSuccess.bind(this))
     );
   }
 
@@ -124,6 +158,132 @@ export class AuthController {
     timestamp: new Date().toISOString(),
   });
 }
+
+  // ==================== OAuth 2.0 ====================
+
+  /**
+   * GET /api/v1/auth/google
+   * Preusmeravanje na Google OAuth stranicu za prijavu
+   */
+  private async googleAuth(req: Request, res: Response): Promise<void> {
+    this.logger.debug("AuthController", "Google OAuth initiation");
+    const url = this.oauthService.getGoogleAuthUrl();
+    res.redirect(url);
+  }
+
+  /**
+   * GET /api/v1/auth/google/callback
+   * Google OAuth callback - razmena koda za token
+   */
+  private async googleCallback(req: Request, res: Response): Promise<void> {
+    const { code, error } = req.query;
+
+    if (error || !code) {
+      this.logger.error("AuthController", `Google OAuth error: ${error || "No code received"}`);
+      res.redirect(`/api/v1/auth/oauth-success?error=${encodeURIComponent(String(error || "No authorization code received"))}`);
+      return;
+    }
+
+    try {
+      const profile = await this.oauthService.handleGoogleCallback(code as string);
+      const result = await this.authService.findOrCreateOAuthUser(profile);
+      res.redirect(`/api/v1/auth/oauth-success?token=${result.token}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Authentication failed";
+      this.logger.error("AuthController", `Google OAuth callback failed: ${message}`);
+      res.redirect(`/api/v1/auth/oauth-success?error=${encodeURIComponent(message)}`);
+    }
+  }
+
+  /**
+   * GET /api/v1/auth/github
+   * Preusmeravanje na GitHub OAuth stranicu za prijavu
+   */
+  private async githubAuth(req: Request, res: Response): Promise<void> {
+    this.logger.debug("AuthController", "GitHub OAuth initiation");
+    const url = this.oauthService.getGitHubAuthUrl();
+    res.redirect(url);
+  }
+
+  /**
+   * GET /api/v1/auth/github/callback
+   * GitHub OAuth callback - razmena koda za token
+   */
+  private async githubCallback(req: Request, res: Response): Promise<void> {
+    const { code, error } = req.query;
+
+    if (error || !code) {
+      this.logger.error("AuthController", `GitHub OAuth error: ${error || "No code received"}`);
+      res.redirect(`/api/v1/auth/oauth-success?error=${encodeURIComponent(String(error || "No authorization code received"))}`);
+      return;
+    }
+
+    try {
+      const profile = await this.oauthService.handleGitHubCallback(code as string);
+      const result = await this.authService.findOrCreateOAuthUser(profile);
+      res.redirect(`/api/v1/auth/oauth-success?token=${result.token}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Authentication failed";
+      this.logger.error("AuthController", `GitHub OAuth callback failed: ${message}`);
+      res.redirect(`/api/v1/auth/oauth-success?error=${encodeURIComponent(message)}`);
+    }
+  }
+
+  /**
+   * GET /api/v1/auth/oauth-success
+   * Prikazuje stranicu sa rezultatom OAuth autentifikacije
+   * Electron BrowserWindow prati ovu stranicu za ekstrakciju tokena
+   */
+  private async oauthSuccess(req: Request, res: Response): Promise<void> {
+    const { error } = req.query;
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>oauth-success</title>
+        <style>
+          body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #202020;
+            color: #ffffff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+          }
+          .container {
+            text-align: center;
+            padding: 40px;
+            background: rgba(45, 45, 45, 0.7);
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+          }
+          .success { color: #60cdff; }
+          .error { color: #c42b1c; }
+          p { color: #a6a6a6; margin-top: 12px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          ${
+            error
+              ? `<h2 class="error">Authentication Failed</h2><p>${error}</p>`
+              : `<h2 class="success">Authentication Successful</h2><p>This window will close automatically...</p>`
+          }
+        </div>
+        <script>
+          // Token je dostupan u URL-u za Electron ekstrakciju
+          // Ovaj prozor će Electron automatski zatvoriti
+        </script>
+      </body>
+      </html>
+    `;
+
+    res.setHeader("Content-Type", "text/html");
+    res.send(html);
+  }
 
 
   getRouter(): Router {

@@ -59,12 +59,22 @@ export class AuditController {
   }
 
   private async getAllAuditLogs(req: Request, res: Response): Promise<void> {
+    // Sanitizuj query parametre - ako je niz, uzmi prvi element
+    let type = req.query.type;
+    let serviceName = req.query.serviceName;
+    
+    if (Array.isArray(type)) type = type[0];
+    if (Array.isArray(serviceName)) serviceName = serviceName[0];
+    
     const filters: FilterAuditLogsDTO = {
-      type: req.query.type as any,
-      serviceName: req.query.serviceName as any,
+      type: type as any,
+      serviceName: serviceName as any,
       fromDate: req.query.fromDate as string,
       toDate: req.query.toDate as string
     };
+
+    this.logger.info("AuditController", `Query params - type: '${type}', serviceName: '${serviceName}'`);
+    this.logger.info("AuditController", `Filters object: ${JSON.stringify(filters)}`);
 
     const auditLogs = await this.auditService.getAllAuditLogs(filters);
 

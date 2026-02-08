@@ -15,11 +15,17 @@ export class User {
   @Column({ unique: true, length: 30 })
   username!: string;
 
-  @Column()
-  password!: string;
+  @Column({ nullable: true })
+  password?: string;
 
   @Column({ unique: true, length: 100 })
   email!: string;
+
+  @Column({ nullable: true, length: 20 })
+  oauthProvider?: string; // 'google' | 'github' | null
+
+  @Column({ nullable: true, length: 255 })
+  oauthId?: string; // Provider's unique user ID
 
   @Column({ length: 50 })
   firstName!: string;

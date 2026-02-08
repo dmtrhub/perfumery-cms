@@ -5,6 +5,7 @@ const electronAPI = {
   minimize: () => electron.ipcRenderer.send("window:minimize"),
   maximize: () => electron.ipcRenderer.send("window:maximize"),
   close: () => electron.ipcRenderer.send("window:close"),
+  openOAuth: (provider) => electron.ipcRenderer.send("oauth:open", provider),
   on: (channel, listener) => {
     const wrapped = (_event, data) => {
       listener(data);

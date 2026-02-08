@@ -15,18 +15,16 @@ export class UserAPI implements IUserAPI {
   }
 
   async getAllUsers(token: string): Promise<UserDTO[]> {
-    return (
-      await this.axiosInstance.get<UserDTO[]>("/users", {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-    ).data;
+    const res = await this.axiosInstance.get("/users", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return res.data?.data || res.data;
   }
 
-  async getUserById(token: string, id: number): Promise<UserDTO> {
-    return (
-      await this.axiosInstance.get<UserDTO>(`/users/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-    ).data;
+  async getUserById(token: string, id: string): Promise<UserDTO> {
+    const res = await this.axiosInstance.get(`/users/${id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return res.data?.data || res.data;
   }
 }

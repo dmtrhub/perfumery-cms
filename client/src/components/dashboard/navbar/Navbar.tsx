@@ -43,37 +43,23 @@ export const DashboardNavbar: React.FC<DashboardNavbarProps> = ({ userAPI }) => 
           <div className="spinner" style={{ width: "20px", height: "20px", borderWidth: "2px" }}></div>
         ) : user ? (
           <>
-            {/* Profile Image */}
-            {user.profileImage ? (
-              <img
-                src={user.profileImage}
-                alt={user.username}
-                style={{
-                  width: "32px",
-                  height: "32px",
-                  borderRadius: "50%",
-                  objectFit: "cover",
-                  border: "2px solid var(--win11-divider)",
-                }}
-              />
-            ) : (
-              <div
-                style={{
-                  width: "32px",
-                  height: "32px",
-                  borderRadius: "50%",
-                  background: "var(--win11-accent)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontWeight: 600,
-                  fontSize: "14px",
-                  color: "#000",
-                }}
-              >
-                {user.username.charAt(0).toUpperCase()}
-              </div>
-            )}
+            {/* Profile Avatar */}
+            <div
+              style={{
+                width: "32px",
+                height: "32px",
+                borderRadius: "50%",
+                background: "var(--win11-accent)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontWeight: 600,
+                fontSize: "14px",
+                color: "#000",
+              }}
+            >
+              {user.username.charAt(0).toUpperCase()}
+            </div>
 
             {/* User Info */}
             <div className="flex flex-col" style={{ gap: 0 }}>
